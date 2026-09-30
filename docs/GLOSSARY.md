@@ -68,3 +68,5 @@
 | 갈라진 기록 (ahead / behind) | 내 컴퓨터와 GitHub의 기록이 서로 다른 상태. `ahead 6`은 내 쪽에만 있는 커밋 6개, `behind 6`은 GitHub 쪽에만 있는 커밋 6개라는 뜻이다. |
 | 전역 무시 목록 | 이 컴퓨터의 모든 저장소에 적용되는 .gitignore (`~/.config/git/ignore`). 저장소의 .gitignore와 달리 다른 컴퓨터에는 적용되지 않는다. |
 | 실행 기록 (Workflow run) | GitHub Actions가 워크플로를 한 번 돌릴 때마다 남는 기록과 로그. 저장소의 Actions 탭에서 보고 지울 수 있다. |
+| 버려진 커밋 (Dangling commit) | 어떤 브랜치도 가리키지 않게 된 커밋. 강제 푸시로 덮어써도 GitHub에는 한동안 남아 커밋 ID로 열릴 수 있다. 이 프로젝트는 저장소를 새로 만들어 없앴다 (D-056). |
+| 빈 저장소 (Empty repository) | 커밋이 하나도 없는 저장소. GitHub에서 README·.gitignore를 켜지 않고 만들면 빈 저장소가 되어, 내 컴퓨터의 기록을 보통 푸시로 그대로 올릴 수 있다. |

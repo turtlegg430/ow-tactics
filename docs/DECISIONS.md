@@ -60,7 +60,7 @@
 | D-053 | 2026-09-30 | 배포는 GitHub Actions로 빌드한 결과물만 GitHub Pages에 올림 (Pages Source: GitHub Actions). `main`에 푸시하면 자동 배포 | Vite는 빌드가 필요함. 기획 문서(docs/)는 웹에 올라가지 않음 | 확정 |
 | D-054 | 2026-09-30 | 커밋 작성자 이메일은 GitHub noreply 주소(`333650928+turtlegg430@users.noreply.github.com`)를 쓰고, 개인 이메일이 드러나는 푸시는 막아 둠 | 공개 저장소에서는 커밋 이메일이 누구에게나 보임 | 확정 (사용자명 변경 반영, D-056) |
 | D-055 | 2026-09-30 | P2(개발 환경) 완료. 저장소에 문서 이관, Vite 8 + React 19 + TypeScript 6 빈 페이지, GitHub Actions 자동 배포(Vite 공식 예시를 따르되 빌드 Node 버전은 내 컴퓨터와 같은 24로 고정). 첫 배포 성공 후 https://turtlegg430.github.io/ow-tactics/ 에서 빈 페이지 열림 확인 | P2 → P3 전환 기준 충족: 문서가 저장소 docs/로 옮겨지고, 배포 주소에서 빈 페이지가 열림 | 확정 |
-| D-056 | 2026-09-30 | GitHub 사용자명을 turtlegg430으로 변경. 배포 주소 https://turtlegg430.github.io/ow-tactics/, noreply 주소 333650928+turtlegg430@users.noreply.github.com. 커밋 기록을 새 이름으로 다시 쓰고 강제 푸시. 이번에 한해 D-050·D-054의 이름과 주소를 고쳐 씀 (옛 이름을 남기지 않기 위한 예외) | 이전 사용자명이 개인 이메일 주소와 비슷해 노출 우려. 커밋이 적고 혼자 쓰는 지금이 가장 안전 | 확정 |
+| D-056 | 2026-09-30 | GitHub 사용자명을 turtlegg430으로 변경. 배포 주소 https://turtlegg430.github.io/ow-tactics/, noreply 주소 333650928+turtlegg430@users.noreply.github.com. 커밋 기록을 새 이름으로 다시 쓰고 강제 푸시. 이번에 한해 D-050·D-054의 이름과 주소를 고쳐 씀 (옛 이름을 남기지 않기 위한 예외). 강제 푸시 뒤에도 옛 커밋이 커밋 ID로 열려서, 저장소를 지우고 같은 이름의 빈 저장소로 다시 만들어 푸시함 (Actions 실행·배포 기록도 초기화) | 이전 사용자명이 개인 이메일 주소와 비슷해 노출 우려. 커밋이 적고 혼자 쓰는 지금이 가장 안전 | 확정 |
 
 ## 보류 항목
 | 항목 | 결정 시점 | 메모 |
