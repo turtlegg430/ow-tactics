@@ -1,0 +1,52 @@
+# main에 푸시하면 빌드해서 GitHub Pages에 배포한다 (D-053)
+# Vite 공식 문서의 GitHub Pages 예시를 따름: https://vite.dev/guide/static-deploy#github-pages
+name: Deploy static content to Pages
+
+on:
+  # main 브랜치에 푸시하면 실행
+  push:
+    branches: ['main']
+
+  # Actions 탭에서 손으로 실행할 수도 있게 함
+  workflow_dispatch:
+
+# GitHub Pages에 배포할 수 있는 권한
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 배포는 한 번에 하나만. 새 푸시가 오면 진행 중인 것은 취소
+concurrency:
+  group: 'pages'
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          # 내 컴퓨터와 같은 Node 버전 (공식 예시는 lts/*)
+          node-version: 24
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Build
+        run: npm run build
+      - name: Setup Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        with:
+          # 빌드 결과물 dist 폴더만 올림 (docs/, reference/는 올라가지 않음)
+          path: './dist'
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
