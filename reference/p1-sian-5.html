@@ -1,0 +1,2210 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>P1 시각 시안 5차</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@1,600;1,700&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+/* 레이아웃: 왼쪽 게임 화면(보드+HUD) 아래 분류 설명과 분류 고르기, 오른쪽 좁은 패널에 시점·옵션·딱지 기준·범례·확인 목록 */
+:root{
+  --page-bg:#e5e7ea; --page-fg:#1c1f23; --muted:#5a6068; --line:#c8ccd2; --hover:rgba(0,0,0,.05);
+  --card:#eef0f3; --chip:#f6f7f9; --warn:#9a5a0c; --warn-bg:#f5e2c4; --ok:#3d6b3a; --ok-bg:#dde9d6;
+
+  /* 게임 화면 안쪽은 테마와 무관하게 고정 */
+  --ally:#3fa9f5; --enemy:#f2464f; --gold:#f5c542; --hud:#eef4f8; --cool:#e0924a;
+  --hp-w:#f3f5f7; --hp-a:#f5a524; --hp-s:#62c8ff; --hp-x:#57d36b; --crit:#e0283a;
+  --fx-heal:#ffd23f; --fx-anti:#a45cff; --fx-dmg:#3d7bff; --fx-hack:#e25cff; --fx-zap:#8fe8ff; --fx-grip:#ff7ac8;
+  --l-b:#5b4636; --l-g:#6d8f5a; --l-m:#c1a771; --l-u:#ece4cc;
+  --fall-bg:#1b1714; --fall-stripe:#d9912b; --stair:#9a9484; --struct:#7f7a73; --roof:#56565b;
+
+  --sans:"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  --cond:"Barlow Condensed","Arial Narrow","Noto Sans KR",sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--page-bg:#191b1e;--page-fg:#e6e8eb;--muted:#9aa1a9;--line:#363b41;--hover:rgba(255,255,255,.06);
+    --card:#202328;--chip:#24282d;--warn:#f0b35e;--warn-bg:#3b2d18;--ok:#9fd18f;--ok-bg:#223120;color-scheme:dark}
+}
+:root[data-theme="dark"]{--page-bg:#191b1e;--page-fg:#e6e8eb;--muted:#9aa1a9;--line:#363b41;--hover:rgba(255,255,255,.06);
+  --card:#202328;--chip:#24282d;--warn:#f0b35e;--warn-bg:#3b2d18;--ok:#9fd18f;--ok-bg:#223120;color-scheme:dark}
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--page-bg);color:var(--page-fg);font-family:var(--sans);line-height:1.55;-webkit-font-smoothing:antialiased}
+
+.page{max-width:1500px;margin:0 auto;padding-block:22px 40px;padding-inline:clamp(16px,3vw,32px);display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:20px 28px;align-items:start}
+.head{grid-column:1/-1}
+.head h1{font-size:clamp(22px,2.3vw,30px);font-weight:900;letter-spacing:-.01em;margin:0 0 4px;text-wrap:balance}
+.head p{margin:0;color:var(--muted);max-width:70ch;font-size:15px}
+@media (max-width:980px){.page{grid-template-columns:minmax(0,1fr)}}
+
+/* ---------- 게임 화면 ---------- */
+.stage{min-width:0;display:grid;gap:14px}
+.frame{position:relative;width:100%;max-width:100%;aspect-ratio:16/9;container-type:inline-size;overflow:hidden;border-radius:4px;
+  background:radial-gradient(ellipse 70% 75% at 50% 50%,#2d2925 0%,#1a1816 62%,#121110 100%)}
+.board{position:absolute;inset:0;width:100%;height:100%;display:block}
+
+/* 보드 (SVG) */
+.face{stroke:rgba(0,0,0,.22);stroke-width:.7;stroke-linejoin:round}
+.lip{stroke:rgba(255,255,255,.34);stroke-width:1.1;stroke-linecap:round}
+.step{stroke:rgba(26,22,18,.8);stroke-width:1.5;stroke-linecap:round}
+.struct-top{stroke:#2b2825;stroke-width:1.2;stroke-linejoin:round}
+.roof-line{stroke:#f1ece2;stroke-width:1.9;stroke-linecap:round}
+.chev-bg{fill:none;stroke:rgba(15,12,10,.85);stroke-width:5.2;stroke-linecap:round;stroke-linejoin:round}
+.chev{fill:none;stroke:#fff;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.track{fill:none;stroke:rgba(240,236,228,.72);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.track-arrow{fill:rgba(244,240,232,.95);stroke:rgba(20,18,16,.85);stroke-width:1;stroke-linejoin:round}
+.point-fill{fill:rgba(255,255,255,.17)}
+.point-line{fill:none;stroke:rgba(255,255,255,.95);stroke-width:2.2;stroke-linejoin:round}
+.maplabel{font-family:var(--sans);font-weight:500;font-size:12.5px;fill:rgba(255,255,255,.93);stroke:rgba(12,10,9,.85);stroke-width:3.4;paint-order:stroke;text-anchor:middle}
+.air-shadow{fill:rgba(0,0,0,.58)}
+.air-line{stroke:rgba(255,255,255,.6);stroke-width:1.2;stroke-dasharray:3 3}
+.gnd-shadow{fill:rgba(0,0,0,.4)}
+.token .body{stroke:rgba(10,10,12,.9);stroke-width:2.5}
+.token.ally .body{fill:var(--ally)}
+.token.enemy .body{fill:var(--enemy)}
+.token .glyph{color:#fff}
+.ult-trk{fill:none;stroke:rgba(10,10,12,.72);stroke-width:4.2}
+.ult-prg{fill:none;stroke:#f3f5f7;stroke-width:2.4}
+.ult-prg.ready{stroke:var(--gold);stroke-width:3}
+.me-ring{fill:none;stroke:var(--gold);stroke-width:1.7;stroke-dasharray:4 3}
+.hp-bg{fill:rgba(10,10,12,.88)}
+.hp-empty{fill:rgba(255,255,255,.14)}
+.tag{font-family:var(--sans);font-weight:700;font-size:11.5px;fill:#fff;stroke:rgba(10,10,12,.88);stroke-width:3.4;paint-order:stroke;text-anchor:middle}
+.token.me .tag{fill:var(--gold)}
+.token.dim .tag{fill:rgba(255,255,255,.7)}
+.cd-bg{fill:rgba(14,14,16,.92);stroke:rgba(255,255,255,.2)}
+.cd-box{fill:rgba(255,255,255,.07);stroke:rgba(255,255,255,.45);stroke-width:1}
+.cd-fill{fill:var(--cool);fill-opacity:.55}
+.cd-num{font-family:var(--cond);font-style:italic;font-weight:700;font-size:12.5px;fill:#fff;text-anchor:middle;stroke:rgba(0,0,0,.35);stroke-width:2;paint-order:stroke}
+.cd-name{font-family:var(--sans);font-weight:500;font-size:10.5px;fill:#d7dbe0}
+.cd-ready .cd-box{stroke:#fff}
+.cd-ready .cd-name{fill:#fff}
+.st-bg{fill:rgba(14,14,16,.92);stroke-width:1.6}
+.st-box{fill:rgba(255,255,255,.07);stroke:rgba(255,255,255,.35);stroke-width:1}
+.st-name{font-family:var(--sans);font-weight:700;font-size:10.5px;fill:#fff}
+.st-more{font-family:var(--cond);font-style:italic;font-weight:700;font-size:12px;fill:#fff;text-anchor:middle}
+.payload-body{fill:#ecebe6;stroke:#15161a;stroke-width:2}
+.corpse-body{stroke:rgba(10,10,12,.85);stroke-width:2}
+.corpse.ally .corpse-body{fill:#3c6e92}
+.corpse.enemy .corpse-body{fill:#8d4148}
+.corpse-glyph{color:rgba(255,255,255,.42)}
+.corpse .tag{fill:rgba(255,255,255,.62)}
+.hidden-ring{fill:none;stroke:rgba(255,255,255,.85);stroke-width:1.4;stroke-dasharray:3 3}
+.payload-band{fill:#8f8a80}
+.payload-wheel{fill:#15161a}
+.fx-label{font-family:var(--sans);font-weight:900;font-size:12px;fill:#fff;stroke:rgba(10,10,12,.9);stroke-width:3.6;paint-order:stroke;text-anchor:middle}
+.fx-num{font-family:var(--cond);font-style:italic;font-weight:700;font-size:13px;fill:#fff;stroke:rgba(10,10,12,.9);stroke-width:3;paint-order:stroke;text-anchor:middle}
+.mode-chip{font-family:var(--sans);font-weight:700;font-size:10px;fill:#fff}
+.fx-ult{font-family:var(--sans);font-weight:900;font-size:12.5px;fill:var(--gold);stroke:rgba(10,10,12,.9);stroke-width:3.6;paint-order:stroke;text-anchor:middle}
+svg.info-off .info{display:none}
+svg.labels-off .maplabels{display:none}
+
+/* ---------- HUD (초기 오버워치풍, 단순화) ---------- */
+.hud{position:absolute;inset:0;pointer-events:none;color:var(--hud);font-family:var(--sans)}
+.frame.hud-off .hud{display:none}
+.cond{font-family:var(--cond);font-style:italic;font-weight:700;line-height:1}
+
+.teambar{position:absolute;top:1.8cqw;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:1.1cqw}
+.team{display:flex;gap:.45cqw}
+.pt{--c:var(--ally);position:relative;width:4.3cqw;height:4.3cqw;transform:skewX(-10deg);
+  background:linear-gradient(180deg,rgba(34,40,48,.82),rgba(16,19,24,.82));border:1px solid rgba(255,255,255,.16);border-bottom:.32cqw solid var(--c)}
+.team.enemy .pt{--c:var(--enemy)}
+.pt .in{position:absolute;inset:0;transform:skewX(10deg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.2cqw}
+.pt svg{width:1.55cqw;height:1.55cqw;color:var(--c)}
+.pt b{font-size:clamp(6px,.92cqw,12px);font-weight:700;line-height:1;white-space:nowrap}
+.pt .ub{position:absolute;left:0;right:0;bottom:-.95cqw;height:.36cqw;background:rgba(255,255,255,.15)}
+.pt .ub::after{content:"";position:absolute;top:0;bottom:0;left:0;width:var(--u);background:rgba(243,246,248,.8)}
+.pt.ready{box-shadow:0 0 1cqw rgba(245,197,66,.55)}
+.pt.ready .ub::after{background:var(--gold);box-shadow:0 0 .6cqw var(--gold)}
+.pt.dead{filter:grayscale(1);opacity:.6}
+.pt.dead .in>*{opacity:.35}
+.pt .rs{position:absolute;inset:0;display:none;place-items:center;transform:skewX(10deg);font-size:clamp(10px,2cqw,24px);color:#fff}
+.pt.dead .rs{display:grid}
+.clock{padding:.45cqw 1.3cqw;transform:skewX(-10deg);background:rgba(16,19,24,.84);border:1px solid rgba(255,255,255,.2)}
+.clock span{display:block;transform:skewX(10deg);font-size:clamp(10px,1.8cqw,22px)}
+
+.killfeed{position:absolute;top:1.8cqw;right:2cqw;display:flex;flex-direction:column;align-items:flex-end;gap:.4cqw;border-radius:2px;transition:box-shadow .3s}
+.killfeed.focus{box-shadow:0 0 0 .3cqw rgba(245,197,66,.85),0 0 1.6cqw rgba(245,197,66,.5)}
+.kf{display:flex;align-items:center;gap:.7cqw;padding:.38cqw 1cqw;transform:skewX(-10deg);background:rgba(244,246,249,.92);color:#1a1d21;font-size:clamp(7px,1.05cqw,13px);font-weight:700}
+.kf>*{transform:skewX(10deg)}
+.kf .e{color:#cf2a35}.kf .a{color:#1b7fd0}
+.kf .karr{width:1.9cqw;height:1.35cqw;color:#fff;stroke:#1a1d21;stroke-width:1.3px;stroke-linejoin:round;paint-order:stroke;overflow:visible}
+.kf.crit .karr{color:var(--crit)}
+
+.me{position:absolute;left:2.4cqw;bottom:2.4cqw;display:flex;align-items:flex-end;gap:1.1cqw}
+.me-pt{width:5.6cqw;height:5.6cqw;transform:skewX(-10deg);display:grid;place-items:center;
+  background:linear-gradient(180deg,rgba(34,40,48,.84),rgba(16,19,24,.84));border:1px solid rgba(255,255,255,.2);border-bottom:.36cqw solid var(--ally)}
+.me-pt svg{transform:skewX(10deg);width:2.5cqw;height:2.5cqw;color:var(--hud)}
+.me-name{font-size:clamp(8px,1.15cqw,14px);font-weight:700;opacity:.92;margin-bottom:.2cqw}
+.me-hp b{font-size:clamp(14px,2.9cqw,36px)}
+.me-hp span{font-size:clamp(9px,1.4cqw,17px);opacity:.72;margin-left:.3cqw}
+.segs{display:flex;gap:.22cqw;margin-top:.5cqw;transform:skewX(-10deg)}
+.seg{position:relative;width:1.45cqw;height:1.05cqw;background:rgba(255,255,255,.17);overflow:hidden}
+.seg i{position:absolute;top:0;bottom:0;left:0;background:var(--hp-w)}
+.seg.a i{background:var(--hp-a)}.seg.s i{background:var(--hp-s)}.seg.x i{background:var(--hp-x)}
+.seg.a{background:rgba(245,165,36,.2)}.seg.s{background:rgba(98,200,255,.2)}
+.segs.anti{outline:.24cqw solid var(--fx-anti);outline-offset:.28cqw}
+.segs.amp{outline:.24cqw solid var(--fx-heal);outline-offset:.28cqw}
+
+.ultm{position:absolute;left:50%;bottom:1.5cqw;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center}
+.ultm .ring{position:relative;width:7cqw;height:7cqw}
+.ultm svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ultm .trk{fill:rgba(16,19,24,.72);stroke:rgba(255,255,255,.18);stroke-width:7}
+.ultm .prg{fill:none;stroke:var(--hud);stroke-width:7}
+.ultv{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+.ultv b{font-size:clamp(12px,2.5cqw,30px)}
+.ultv span{font-size:clamp(8px,1.1cqw,14px);margin-left:.1cqw;align-self:center;opacity:.8}
+.ultn{margin-top:.35cqw;font-size:clamp(7px,.95cqw,12px);opacity:.82;white-space:nowrap}
+
+.abil{position:absolute;right:2.4cqw;bottom:2.4cqw;display:flex;align-items:flex-end;gap:.75cqw}
+.ab{display:flex;flex-direction:column;align-items:center;gap:.3cqw}
+.ab .ic{position:relative;width:4.4cqw;height:4.4cqw;transform:skewX(-10deg);display:grid;place-items:center;overflow:hidden;
+  background:rgba(16,19,24,.76);border:1px solid rgba(255,255,255,.3);transition:box-shadow .25s}
+.ab .fill{position:absolute;left:0;right:0;bottom:0;height:calc(var(--cd,0) * 100%);background:linear-gradient(180deg,rgba(236,168,98,.5),rgba(224,146,74,.5))}
+.ab .ic svg{position:relative;transform:skewX(10deg);width:2cqw;height:2cqw;color:var(--hud)}
+.ab.cd .ic svg{opacity:.35}
+.ab .ic em{position:absolute;inset:0;display:none;place-items:center;transform:skewX(10deg);font-size:clamp(11px,2cqw,24px);color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.45)}
+.ab.cd .ic em{display:grid}
+.ab.flash .ic{box-shadow:0 0 1.2cqw rgba(255,255,255,.7)}
+.ab kbd{font-family:var(--cond);font-weight:600;font-size:clamp(7px,.9cqw,11px);padding:0 .45cqw;border:1px solid rgba(255,255,255,.35);border-radius:2px;background:rgba(16,19,24,.6);line-height:1.5}
+.ab .an{font-size:clamp(6px,.85cqw,11px);opacity:.8;white-space:nowrap}
+.ammo{margin-left:.7cqw;padding-bottom:.4cqw}
+.ammo b{font-size:clamp(14px,3cqw,36px)}
+.ammo span{font-size:clamp(9px,1.4cqw,17px);opacity:.72;margin-left:.3cqw}
+
+/* ---------- 분류 설명 카드 ---------- */
+.demo{display:grid;gap:12px;padding:16px 18px;background:var(--card);border:1px solid var(--line);border-radius:6px}
+.demo-top{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--muted)}
+.demo h2{margin:0;font-size:20px;font-weight:900;letter-spacing:-.01em;text-wrap:balance}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px;white-space:nowrap}
+.pill.ok{background:var(--ok-bg);color:var(--ok)}
+.pill.warn{background:var(--warn-bg);color:var(--warn)}
+.count{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.demo-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px 22px}
+@media (max-width:760px){.demo-grid{grid-template-columns:minmax(0,1fr)}}
+.demo dl{margin:0;display:grid;gap:8px}
+.demo dt{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.04em}
+.demo dd{margin:0;font-size:14.5px;max-width:62ch}
+.ask{border-left:3px solid var(--warn);padding:6px 0 6px 12px;font-size:14px;max-width:70ch}
+.ask b{color:var(--warn)}
+.ask ul{margin:4px 0 0;padding-left:18px}
+.variants{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.palette{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:6px 18px;padding:12px 14px;border:1px solid var(--line);border-radius:6px;background:var(--page-bg)}
+.pal-h{grid-column:1/-1;font-size:12px;letter-spacing:.04em;color:var(--muted)}
+.pal{display:flex;gap:10px;align-items:flex-start;font-size:13px;line-height:1.45;min-width:0}
+.pal i{flex:none;width:28px;height:6px;border-radius:3px;margin-top:7px;box-shadow:0 0 0 1px rgba(0,0,0,.45)}
+.pal b{font-weight:700}
+.variants span{font-size:12.5px;color:var(--muted);margin-right:2px}
+.ctrl{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.btn{font:inherit;font-size:13px;font-weight:500;padding:6px 12px;border:1px solid var(--line);border-radius:6px;background:var(--chip);color:var(--page-fg);cursor:pointer;line-height:1.3}
+.btn:hover{background:var(--hover)}
+.btn:focus-visible,.chip:focus-visible{outline:2px solid var(--ally);outline-offset:2px}
+.prog{flex:1 1 120px;height:4px;background:var(--line);border-radius:2px;overflow:hidden;min-width:80px}
+.prog i{display:block;height:100%;width:0;background:var(--page-fg)}
+.hint{font-size:12.5px;color:var(--muted);margin:0}
+
+/* ---------- 분류 고르기 ---------- */
+.picker{display:grid;gap:10px}
+.pick-row{display:grid;grid-template-columns:84px minmax(0,1fr);gap:8px;align-items:start}
+@media (max-width:560px){.pick-row{grid-template-columns:minmax(0,1fr)}}
+.pick-row>b{font-size:12.5px;font-weight:700;color:var(--muted);padding-top:6px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:inherit;font-size:13px;font-weight:500;padding:5px 11px;border:1px solid var(--line);border-radius:999px;background:var(--chip);color:var(--page-fg);cursor:pointer;display:inline-flex;align-items:center;gap:6px;line-height:1.3}
+.chip:hover{background:var(--hover)}
+.chip[aria-pressed="true"]{background:var(--page-fg);color:var(--page-bg);border-color:var(--page-fg)}
+.chip .dot{width:7px;height:7px;border-radius:50%;background:var(--warn);flex:none}
+.chip[aria-pressed="true"] .dot{box-shadow:0 0 0 1.5px var(--page-bg)}
+
+/* ---------- 오른쪽 패널 ---------- */
+.side{display:flex;flex-direction:column;gap:18px;font-size:14px;min-width:0}
+.side section{padding-bottom:16px;border-bottom:1px solid var(--line)}
+.side section:last-child{border-bottom:0}
+.side h2{font-size:14px;font-weight:700;margin:0 0 10px}
+.rotbtns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.rotbtns button{font:inherit;font-size:13px;font-weight:500;padding:8px 6px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--page-fg);cursor:pointer}
+.rotbtns button:hover{background:var(--hover)}
+.rotbtns button:focus-visible{outline:2px solid var(--ally);outline-offset:2px}
+.segc{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.segc label{position:relative;cursor:pointer}
+.segc label+label{border-left:1px solid var(--line)}
+.segc input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
+.segc span{display:block;padding:8px 4px;text-align:center;font-size:13px;font-weight:500;line-height:1.3}
+.segc input:checked+span{background:var(--page-fg);color:var(--page-bg)}
+.segc input:focus-visible+span{outline:2px solid var(--ally);outline-offset:-3px}
+.compass{display:flex;align-items:center;gap:12px;margin-top:12px;font-size:13px;color:var(--muted)}
+.compass svg{flex:none;width:70px;height:46px}
+.opt{display:flex;gap:9px;align-items:flex-start;padding:4px 0;cursor:pointer}
+.opt input{margin:3px 0 0;accent-color:var(--ally);flex:none}
+.opt small{display:block;color:var(--muted);font-size:12.5px}
+input:focus-visible{outline:2px solid var(--ally);outline-offset:2px}
+.tiers{margin:0;padding:0;list-style:none;display:grid;gap:6px;font-size:13px}
+.tiers li{display:grid;grid-template-columns:22px minmax(0,1fr);gap:4px}
+.tiers b{font-family:var(--cond);font-style:italic;font-size:15px}
+.tier-note{font-size:12.5px;color:var(--muted);margin:8px 0 0}
+.legend{list-style:none;margin:0;padding:0;display:grid;gap:7px}
+.legend li{display:flex;gap:10px;align-items:center}
+.sw{flex:none;width:26px;height:15px;border-radius:2px;border:1px solid rgba(0,0,0,.25)}
+.sw.b{background:var(--l-b)}.sw.g{background:var(--l-g)}.sw.m{background:var(--l-m)}.sw.u{background:var(--l-u)}
+.sw.f{background:repeating-linear-gradient(-45deg,var(--fall-stripe) 0 3px,var(--fall-bg) 3px 8px)}
+.sw.s{background:repeating-linear-gradient(90deg,var(--stair) 0 4px,rgba(26,22,18,.85) 4px 5.5px)}
+.sw.w{background:var(--struct);border:1.5px solid #2b2825}
+.sw.r{background:var(--roof);border:2px solid #f1ece2;outline:1px solid rgba(0,0,0,.3)}
+.hp4{flex:none;display:flex;gap:2px;padding:2px;background:#16171a;border-radius:2px}
+.hp4 i{width:9px;height:9px}
+.legend svg{flex:none;width:26px;height:26px}
+.todo{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.todo li{display:flex;align-items:flex-start;gap:6px}
+.todo .opt{flex:1;min-width:0}
+.todo .go{font:inherit;font-size:12px;padding:2px 8px;border:1px solid var(--line);border-radius:4px;background:transparent;color:var(--muted);cursor:pointer;margin-top:3px;white-space:nowrap}
+.todo .go:hover{background:var(--hover);color:var(--page-fg)}
+.todo .go:focus-visible{outline:2px solid var(--ally);outline-offset:2px}
+@media (prefers-reduced-motion: reduce){.ab .ic{transition:none}.killfeed{transition:none}}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="g-tank" viewBox="-8 -8 16 16"><path fill="currentColor" d="M0-7.2 6.2-4.8 5.4 1.8C4.6 4.6 2.6 6.4 0 7.6-2.6 6.4-4.6 4.6-5.4 1.8L-6.2-4.8Z"/></symbol>
+  <symbol id="g-dmg" viewBox="-8 -8 16 16"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle r="4.2"/><path d="M0-7.4v3M0 4.4v3M-7.4 0h3M4.4 0h3"/></g><circle r="1.3" fill="currentColor"/></symbol>
+  <symbol id="g-sup" viewBox="-8 -8 16 16"><path fill="currentColor" d="M-2.2-7h4.4v4.8H7v4.4H2.2V7h-4.4V2.2H-7v-4.4h4.8z"/></symbol>
+  <symbol id="g-bot" viewBox="-8 -8 16 16"><rect x="-5.5" y="-4.5" width="11" height="9" rx="2" fill="currentColor"/><rect x="-3.2" y="-1.8" width="2" height="2" fill="#15161a"/><rect x="1.2" y="-1.8" width="2" height="2" fill="#15161a"/><path d="M0-4.5v-2.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+  <symbol id="g-sprint" viewBox="-8 -8 16 16"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M-6-5-1 0-6 5M0-5 5 0 0 5"/></symbol>
+  <symbol id="g-field" viewBox="-8 -8 16 16"><circle r="6.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2.4 1.6"/><path fill="currentColor" d="M-1.2-3.8h2.4v2.6h2.6v2.4H1.2v2.6h-2.4V1.2h-2.6v-2.4h2.6z"/></symbol>
+  <symbol id="g-rocket" viewBox="-8 -8 16 16"><path fill="currentColor" d="M-6 2.6 2-1.4 2 1.2-5.4 4.6ZM-3.4-2.6 4.6-6.4 4.6-3.8-2.8-.6ZM-1 5.4 7 1.4 7 4-.4 7.4Z"/></symbol>
+  <symbol id="g-karrow" viewBox="-8 -6 16 12"><path fill="currentColor" d="M-7.2-2.5H.4V-5.6L7.4 0 .4 5.6V2.5H-7.2Z"/></symbol>
+  <symbol id="g-crit" viewBox="-8 -8 16 16"><path fill="currentColor" d="M0-7a6.2 6.2 0 0 0-6.2 6.2c0 2.2 1.1 3.6 2.4 4.4V6h7.6V3.6C5.1 2.8 6.2 1.4 6.2-.8A6.2 6.2 0 0 0 0-7Zm-2.6 4.4a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2Zm5.2 0a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2Z"/></symbol>
+</svg>
+
+<main class="page">
+  <header class="head">
+    <h1>P1 시각 시안 5차</h1>
+    <p>4차 피드백을 반영했어요. 연결선·상태 딱지·구역에 역할별 색을 쓰고, 치유 불가·증폭은 체력바 테두리로도 보여줘요. 밀침과 견인에서 화살표를 뺐고, 위도우 적외선 투시와 라이프위버 씨앗을 새로 넣었어요. 점이 찍힌 분류가 5차에서 바뀐 곳이에요. 가상의 맵이고, 배치와 수치는 보이는지 확인하려는 예시예요.</p>
+  </header>
+
+  <div class="stage">
+    <div class="frame" id="frame">
+      <svg id="board" class="board" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet" role="img" aria-label="가상 맵 조각을 비스듬히 내려다본 2.5D 전술 보드">
+        <defs>
+          <pattern id="hatchFall" patternUnits="userSpaceOnUse" width="11" height="11" patternTransform="rotate(-45)">
+            <rect width="11" height="11" fill="#1b1714"/><rect width="4" height="11" fill="#d9912b"/>
+          </pattern>
+          <linearGradient id="fadeDark" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".85"/>
+          </linearGradient>
+          <linearGradient id="pillar" x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0" stop-color="#fff6d8" stop-opacity=".9"/><stop offset=".55" stop-color="#ffe9a8" stop-opacity=".45"/><stop offset="1" stop-color="#ffe9a8" stop-opacity="0"/>
+          </linearGradient>
+          <filter id="fGlow" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="2.2" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+        <g id="terrain"></g>
+        <g id="maplabels" class="maplabels"></g>
+        <g id="fxGround"></g>
+        <g id="shadows"></g>
+        <g id="zlayer"></g>
+        <g id="fxTop"></g>
+        <g id="fxOver"></g>
+        <text id="measure" class="st-name" x="-9999" y="-9999" aria-hidden="true"></text>
+      </svg>
+
+      <div class="hud">
+        <div class="teambar">
+          <div class="team ally">
+            <div class="pt"><div class="in"><svg><use href="#g-tank"/></svg><b>라인</b></div><i class="ub" style="--u:45%"></i></div>
+            <div class="pt"><div class="in"><svg><use href="#g-dmg"/></svg><b>솔저</b></div><i class="ub" style="--u:74%"></i></div>
+            <div class="pt ready"><div class="in"><svg><use href="#g-dmg"/></svg><b>파라</b></div><i class="ub" style="--u:100%"></i></div>
+            <div class="pt dead" id="ptLucio"><div class="in"><svg><use href="#g-sup"/></svg><b>루시우</b></div><span class="rs cond">7</span><i class="ub" style="--u:30%"></i></div>
+            <div class="pt"><div class="in"><svg><use href="#g-sup"/></svg><b>메르시</b></div><i class="ub" style="--u:62%"></i></div>
+          </div>
+          <div class="clock"><span class="cond">2:14</span></div>
+          <div class="team enemy">
+            <div class="pt"><div class="in"><svg><use href="#g-tank"/></svg><b>윈스턴</b></div><i class="ub" style="--u:20%"></i></div>
+            <div class="pt dead"><div class="in"><svg><use href="#g-dmg"/></svg><b>위도우</b></div><span class="rs cond">5</span><i class="ub" style="--u:55%"></i></div>
+            <div class="pt ready"><div class="in"><svg><use href="#g-dmg"/></svg><b>겐지</b></div><i class="ub" style="--u:100%"></i></div>
+            <div class="pt"><div class="in"><svg><use href="#g-sup"/></svg><b>아나</b></div><i class="ub" style="--u:80%"></i></div>
+            <div class="pt"><div class="in"><svg><use href="#g-sup"/></svg><b>키리코</b></div><i class="ub" style="--u:35%"></i></div>
+          </div>
+        </div>
+
+        <div class="killfeed" id="killfeed">
+          <div class="kf"><span class="a">솔저: 76</span><svg class="karr" viewBox="-8 -6 16 12" aria-label="처치"><path fill="currentColor" d="M-7.2-2.5H.4V-5.6L7.4 0 .4 5.6V2.5H-7.2Z"/></svg><span class="e">위도우메이커</span></div>
+          <div class="kf crit"><span class="e">위도우메이커</span><svg class="karr" viewBox="-8 -6 16 12" aria-label="치명타 처치"><path fill="currentColor" d="M-7.2-2.5H.4V-5.6L7.4 0 .4 5.6V2.5H-7.2Z"/></svg><span class="a">루시우</span></div>
+        </div>
+
+        <div class="me">
+          <div class="me-pt"><svg id="mePic"><use href="#g-dmg"/></svg></div>
+          <div>
+            <div class="me-name" id="meName">솔저: 76</div>
+            <div class="me-hp cond"><b id="meHp">178</b><span id="meMax">/ 250</span></div>
+            <div class="segs" id="segs"></div>
+          </div>
+        </div>
+
+        <div class="ultm">
+          <div class="ring">
+            <svg viewBox="0 0 100 100"><circle class="trk" cx="50" cy="50" r="44"/><circle class="prg" cx="50" cy="50" r="44" pathLength="100" stroke-dasharray="74 100"/></svg>
+            <div class="ultv cond"><b>74</b><span>%</span></div>
+          </div>
+          <div class="ultn">전술 조준경</div>
+        </div>
+
+        <div class="abil">
+          <div class="ab" data-cd="sprint"><div class="ic"><i class="fill"></i><svg><use href="#g-sprint"/></svg><em class="cond"></em></div><kbd>SHIFT</kbd><span class="an">질주</span></div>
+          <div class="ab" data-cd="field"><div class="ic"><i class="fill"></i><svg><use href="#g-field"/></svg><em class="cond"></em></div><kbd>E</kbd><span class="an">생체장</span></div>
+          <div class="ab" data-cd="rocket"><div class="ic"><i class="fill"></i><svg><use href="#g-rocket"/></svg><em class="cond"></em></div><kbd>우클릭</kbd><span class="an">나선 로켓</span></div>
+          <div class="ammo cond"><b>22</b><span>/ 30</span></div>
+        </div>
+      </div>
+    </div>
+
+    <section class="demo" id="demo" aria-live="polite">
+      <div class="demo-top">
+        <span class="eyebrow" id="dGroup">공격 · 1 / 21</span>
+        <h2 id="dName">즉발 사격 (히트스캔)</h2>
+        <span class="pill ok" id="dPill">확정</span>
+        <span class="count" id="dCount">매핑표 37줄</span>
+      </div>
+      <div class="demo-grid">
+        <dl>
+          <div><dt>대표 예</dt><dd id="dRep"></dd></div>
+          <div><dt>지금 보드에서</dt><dd id="dScene"></dd></div>
+        </dl>
+        <dl>
+          <div><dt>보드 표시</dt><dd id="dRule"></dd></div>
+        </dl>
+      </div>
+      <div class="variants" id="dVariants" hidden></div>
+      <div class="palette" id="dPalette" hidden></div>
+      <div class="ask" id="dAsk" hidden></div>
+      <div class="ctrl">
+        <button type="button" class="btn" id="bPrev" aria-label="이전 분류">◀ 이전</button>
+        <button type="button" class="btn" id="bPlay">멈춤</button>
+        <button type="button" class="btn" id="bRestart">처음부터</button>
+        <button type="button" class="btn" id="bNext" aria-label="다음 분류">다음 ▶</button>
+        <div class="prog" aria-hidden="true"><i id="prog"></i></div>
+      </div>
+      <p class="hint">키보드 ← → 로도 분류를 넘길 수 있어요. 토큰에 마우스를 올리면 체력 구성이 나와요.</p>
+    </section>
+
+    <nav class="picker" id="picker" aria-label="분류 고르기"></nav>
+  </div>
+
+  <aside class="side">
+    <section>
+      <h2>시점</h2>
+      <div class="rotbtns">
+        <button type="button" id="rotL">⟲ 왼쪽으로 90°</button>
+        <button type="button" id="rotR">⟳ 오른쪽으로 90°</button>
+      </div>
+      <div class="compass">
+        <svg id="compass" viewBox="-35 -23 70 46" aria-hidden="true"></svg>
+        <span id="angleText">기본 시점</span>
+      </div>
+    </section>
+
+    <section>
+      <h2>보기 옵션</h2>
+      <label class="opt"><input type="checkbox" id="optHud" checked><span>HUD</span></label>
+      <label class="opt"><input type="checkbox" id="optInfo" checked><span>토큰 정보<small>체력, 궁극기, 쿨타임·상태 딱지</small></span></label>
+      <label class="opt"><input type="checkbox" id="optLabels" checked><span>지역 이름</span></label>
+      <label class="opt"><input type="checkbox" id="optDim" checked><span>관련 없는 영웅 흐리게</span></label>
+    </section>
+
+    <section>
+      <h2>딱지 띄우는 기준 <small style="font-weight:500;color:var(--muted)">D-039 확정</small></h2>
+      <ul class="tiers">
+        <li><b>1</b><span>제어·위험: 기절, 넘어뜨림, 수면, 해킹, 이동기 봉쇄, 저지 불가, 치유 불가. 걸리면 항상 띄움</span></li>
+        <li><b>2</b><span>강화·약화: 공격력 증폭, 받는 피해 증가, 치유 증폭, 화상·출혈·독. 문제에 관련 있으면 띄움</span></li>
+        <li><b>3</b><span>자잘한 버프: 이동·공격·재장전 속도 증가, 스스로 회복. 해설에서 짚을 때만</span></li>
+      </ul>
+      <p class="tier-note">토큰 하나에 최대 2개, 넘치면 +숫자. 같은 순위는 남은 시간이 긴 것부터. 딱지 색은 효과 종류. 공용 치유 감소는 늘 걸려 있어 3순위로 둬요.</p>
+    </section>
+
+    <section>
+      <h2>범례</h2>
+      <ul class="legend">
+        <li><span class="sw u"></span>2층</li>
+        <li><span class="sw m"></span>1.5층</li>
+        <li><span class="sw g"></span>1층</li>
+        <li><span class="sw b"></span>지하</li>
+        <li><span class="sw f"></span>낙사 구간</li>
+        <li><span class="sw s"></span>계단과 경사로, 꺾쇠가 오르는 쪽</li>
+        <li><span class="sw w"></span>벽과 엄폐물</li>
+        <li><span class="sw r"></span>지붕 (밟고 설 수 없음)</li>
+        <li><span class="hp4" aria-hidden="true"><i style="background:var(--hp-w)"></i><i style="background:var(--hp-a)"></i><i style="background:var(--hp-s)"></i><i style="background:var(--hp-x)"></i></span>체력: 기본, 방어구, 보호막, 추가 생명력</li>
+        <li><svg viewBox="-13 -13 26 26" aria-hidden="true"><rect x="-12" y="-7" width="24" height="14" rx="2" fill="#16171a" stroke="#a45cff" stroke-width="1.6"/><rect x="-9" y="-4" width="8" height="8" fill="#a45cff" fill-opacity=".6"/></svg>상태 딱지: 토큰 왼쪽, 색은 효과 종류</li>
+        <li><svg viewBox="-13 -13 26 26" aria-hidden="true"><rect x="-12" y="-8" width="24" height="7" rx="1.5" fill="#16171a" stroke="#a45cff" stroke-width="1.8"/><rect x="-10" y="-6" width="15" height="3" fill="#f3f5f7"/><rect x="-12" y="2" width="24" height="7" rx="1.5" fill="#16171a" stroke="#ffd23f" stroke-width="1.8"/><rect x="-10" y="4" width="18" height="3" fill="#f3f5f7"/></svg>체력바 테두리: 보라 치유 불가, 노랑 치유 증폭</li>
+        <li><svg viewBox="-13 -13 26 26" aria-hidden="true"><path d="M-12-7 12-7M-12-2.3 12-2.3M-12 2.3 12 2.3M-12 7 12 7" stroke-width="2.6" stroke-linecap="round"/><path d="M-12-7H12" stroke="#ffd23f" stroke-width="2.6"/><path d="M-12-2.3H12" stroke="#3d7bff" stroke-width="2.6"/><path d="M-12 2.3H12" stroke="#e25cff" stroke-width="2.6"/><path d="M-12 7H12" stroke="#ff7ac8" stroke-width="2.6"/></svg>연결선: 색은 역할 (연결선 장면의 색표)</li>
+        <li><svg viewBox="-13 -13 26 26" aria-hidden="true"><g transform="skewX(-10)"><rect x="-8" y="-8" width="16" height="16" fill="#222" stroke="rgba(128,128,128,.8)"/><rect x="-8" y="-1" width="16" height="9" fill="#e0924a" fill-opacity=".6"/></g></svg>쿨타임 딱지: 토큰 오른쪽, 주황이 빠지며 줄어듦</li>
+        <li><svg viewBox="-13 -13 26 26" aria-hidden="true"><rect x="-12" y="-7" width="24" height="14" fill="#f4f6f9"/><path d="M-7.5-2.4H.5v-3.4L7.5 0 .5 5.8V2.4h-8Z" fill="#e0283a" stroke="#1a1d21" stroke-width="1"/></svg>킬로그: 치명타 킬은 화살표가 붉게</li>
+        <li><svg viewBox="-13 -13 26 26" aria-hidden="true"><g transform="scale(1,.8)"><circle r="8" fill="#3c6e92" stroke="#111" stroke-width="1.2"/></g><g transform="translate(14,0) scale(1,.8)"><circle r="8" fill="#8d4148" stroke="#111" stroke-width="1.2"/></g></svg>색이 꺼진 아이콘은 죽은 영웅</li>
+        <li><svg viewBox="-13 -13 26 26" aria-hidden="true"><circle r="10.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2.5 2"/><circle r="6.5" fill="#f2464f" fill-opacity=".45" stroke="#111" stroke-opacity=".45" stroke-width="1.2"/></svg>반투명 + 점선 고리는 가려진 영웅</li>
+        <li><svg viewBox="-13 -13 26 26" aria-hidden="true"><ellipse cx="0" cy="9" rx="7" ry="3.2" fill="rgba(0,0,0,.55)"/><line x1="0" y1="9" x2="0" y2="-1" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2" opacity=".6"/><circle cy="-6" r="5.5" fill="#3fa9f5" stroke="#111" stroke-width="1.2"/></svg>공중에 뜬 영웅과 바닥 그림자</li>
+        <li><svg viewBox="-13 -13 26 26" aria-hidden="true"><circle r="9.5" fill="none" stroke="#f5c542" stroke-width="1.5" stroke-dasharray="3 2"/><circle r="6" fill="#3fa9f5" stroke="#111" stroke-width="1.2"/></svg>나 (판단의 주인공)</li>
+        <li><svg viewBox="-13 -13 26 26" aria-hidden="true"><circle r="9" fill="none" stroke="#222" stroke-width="3"/><circle r="9" fill="none" stroke="#f5c542" stroke-width="2"/><circle r="6" fill="#f2464f" stroke="#111" stroke-width="1.2"/></svg>토큰 둘레 고리는 궁극기, 금색이면 준비됨</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>확인할 것</h2>
+      <ul class="todo" id="todo"></ul>
+      <p class="hint" style="margin-top:8px">체크는 이 브라우저에만 남아요. 결정은 대화로 알려줘요.</p>
+    </section>
+  </aside>
+</main>
+
+<script>
+(() => {
+  "use strict";
+  // ================= 지형 데이터 =================
+  // 한 글자 = 한 칸. U=2층, M=1.5층, G=1층, B=지하, F=낙사, W=벽·엄폐물
+  // S, s, d = 계단 / R = 지붕 (높이는 SLOPES에서 지정)
+  const MAP = [
+    "UUUUUGGGGMMMMG",
+    "UUUUUGGGsMMMMG",
+    "UUUUUSSGsMMMMG",
+    "UUUUUSSGGMMMMG",
+    "UUUUUGGGGGGGGG",
+    "GGGGGGGddGWGGG",
+    "GGGWGGGddGGGFF",
+    "GGGWGBBBBGGGFF",
+    "GGGGGBBBBGGGFF",
+    "RRRGGBBBBGGGFF",
+    "RRRGGBBBBGGGFF",
+    "GGGGGGGGGGGGFF"
+  ];
+  const W = 14, D = 12;
+  const TW = 64, TH = 32, HS = 38;             // 칸 너비, 칸 높이, 한 층 높이(픽셀)
+  const SLAB = -0.22;                           // 1층 바닥판 두께
+  const PIT_BOT = -1.22;                        // 지하 상자 밑면
+  const FALL = -1.6;                            // 낙사 표시면
+  const H = { B: -1, G: 0, M: 0.5, U: 1.3, W: 0.55 };
+  const COLORS = { B: "#5b4636", G: "#6d8f5a", M: "#c1a771", U: "#ece4cc" };
+  const STAIR_FILL = "#9a9484", STRUCT = "#7f7a73", ROOF = "#56565b";
+
+  // 경사면: axis = 기울어진 방향, a = 좌표 작은 쪽 끝 높이, b = 큰 쪽 끝 높이
+  const SLOPES = {};
+  const slope = (keys, v) => keys.forEach(k => SLOPES[k] = v);
+  slope(["5,2", "5,3"], { axis: "x", a: 1.3,  b: 0.65 });
+  slope(["6,2", "6,3"], { axis: "x", a: 0.65, b: 0 });
+  slope(["8,1", "8,2"], { axis: "x", a: 0,    b: 0.5 });
+  slope(["7,5", "8,5"], { axis: "y", a: 0,    b: -0.5 });
+  slope(["7,6", "8,6"], { axis: "y", a: -0.5, b: -1 });
+  slope(["0,9", "1,9", "2,9"],    { axis: "y", a: 1.0,  b: 1.45, roof: true });
+  slope(["0,10", "1,10", "2,10"], { axis: "y", a: 1.45, b: 1.0,  roof: true });
+
+  // 계단 꺾쇠: 계단 중심, 오르내리는 축, 오르는 방향(+1이면 좌표가 커지는 쪽)
+  const CHEVRONS = [
+    { x: 6.0, y: 3.0, axis: "x", up: -1 },
+    { x: 8.5, y: 2.0, axis: "x", up: 1 },
+    { x: 8.0, y: 6.0, axis: "y", up: -1 }
+  ];
+  const LABELS = [
+    { t: "발코니 (2층)",      x: 2.6,  y: 3.4, h: 1.3 },
+    { t: "측면 단상 (1.5층)", x: 12.2, y: 0.6, h: 0.5 },
+    { t: "지하 통로",         x: 5.6,  y: 8.4, h: -1 },
+    { t: "절벽 (낙사)",       x: 13.1, y: 9.4, h: FALL }
+  ];
+  const POINT = { x: 1.6, y: 6.4, r: 0.85, label: "거점 A" };
+  const TRACK = [[4.5, 5.3], [4.5, 11.7]];
+  const PAYLOAD = { x: 4.5, y: 8.6 };
+
+
+  // ================= 도우미 =================
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, parent) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  };
+  const f1 = v => v.toFixed(1);
+  const pts = a => a.map(p => f1(p[0]) + "," + f1(p[1])).join(" ");
+  const hex2rgb = h => { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
+  const rgb2hex = r => "#" + r.map(v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("");
+  const shade = (h, f) => rgb2hex(hex2rgb(h).map(v => v * f));
+
+  // 회전: 맵 중심을 기준으로 돌린 뒤 비스듬히 내려다본 좌표로 바꾼다
+  const CX = W / 2, CY = D / 2;
+  let ANG = 0;
+  const rot = (x, y) => {
+    const dx = x - CX, dy = y - CY, c = Math.cos(ANG), s = Math.sin(ANG);
+    return [dx * c - dy * s, dx * s + dy * c];
+  };
+  const iso = (x, y, h) => { const [rx, ry] = rot(x, y); return [(rx - ry) * TW / 2, (rx + ry) * TH / 2 - h * HS]; };
+  const depth = (x, y) => { const [rx, ry] = rot(x, y); return rx + ry; };
+
+  // ================= 칸 정보 만들기 =================
+  const T = [];
+  for (let gy = 0; gy < D; gy++) {
+    T.push([]);
+    for (let gx = 0; gx < W; gx++) {
+      const sl = SLOPES[gx + "," + gy], c = MAP[gy][gx];
+      let t;
+      if (sl) {
+        t = { type: sl.roof ? "roof" : "stair", s: sl };
+        if (sl.axis === "x") { t.hA = t.hD = sl.a; t.hB = t.hC = sl.b; }
+        else { t.hA = t.hB = sl.a; t.hD = t.hC = sl.b; }
+      } else if (c === "F") t = { type: "fall", hA: FALL, hB: FALL, hC: FALL, hD: FALL };
+      else if (c === "W") t = { type: "struct", hA: H.W, hB: H.W, hC: H.W, hD: H.W };
+      else t = { type: "floor", c, hA: H[c], hB: H[c], hC: H[c], hD: H[c] };
+      T[gy].push(t);
+    }
+  }
+  const at = (gx, gy) => (gx < 0 || gy < 0 || gx >= W || gy >= D) ? null : T[gy][gx];
+  const isDown = t => t && ((t.type === "floor" && t.c === "B") || (t.type === "stair" && Math.min(t.hA, t.hB, t.hC, t.hD) < -1e-6));
+  // 밑면: 1층은 얇은 판. 지하와 그 둘레는 아래로 튀어나온 상자. 낙사 둘레는 절벽.
+  for (let gy = 0; gy < D; gy++) for (let gx = 0; gx < W; gx++) {
+    const t = T[gy][gx];
+    t.bot = SLAB; t.fallRing = false;
+    if (t.type === "fall") { t.bot = FALL; continue; }
+    let down = isDown(t), nearFall = false;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const n = at(gx + dx, gy + dy);
+      if (isDown(n)) down = true;
+      if (n && n.type === "fall") nearFall = true;
+    }
+    if (down) t.bot = PIT_BOT;
+    else if (nearFall) { t.bot = FALL; t.fallRing = true; }
+  }
+  function heightAt(x, y) {
+    const gx = Math.min(W - 1, Math.max(0, Math.floor(x))), gy = Math.min(D - 1, Math.max(0, Math.floor(y)));
+    const t = at(gx, gy);
+    if (t.s) { const u = t.s.axis === "x" ? x - gx : y - gy; return t.s.a + (t.s.b - t.s.a) * u; }
+    return t.hA;
+  }
+
+  // ================= 그리기 =================
+  const FACES = [
+    { n: [1, 0],  c1: "B", c2: "C", p1: [1, 0], p2: [1, 1], nb: [1, 0],  m1: "hA", m2: "hD" },
+    { n: [0, 1],  c1: "C", c2: "D", p1: [1, 1], p2: [0, 1], nb: [0, 1],  m1: "hB", m2: "hA" },
+    { n: [-1, 0], c1: "D", c2: "A", p1: [0, 1], p2: [0, 0], nb: [-1, 0], m1: "hC", m2: "hB" },
+    { n: [0, -1], c1: "A", c2: "B", p1: [0, 0], p2: [1, 0], nb: [0, -1], m1: "hD", m2: "hC" }
+  ];
+
+  function drawTile(g, gx, gy) {
+    const t = at(gx, gy);
+    const c = Math.cos(ANG), s = Math.sin(ANG);
+    if (t.type !== "fall") {
+      const base = t.type === "floor" ? COLORS[t.c] : t.type === "stair" ? STAIR_FILL : STRUCT;
+      for (const F of FACES) {
+        const nr = [F.n[0] * c - F.n[1] * s, F.n[0] * s + F.n[1] * c];
+        if (nr[0] + nr[1] <= 1e-6) continue;                     // 보는 쪽을 향한 면만
+        const n = at(gx + F.nb[0], gy + F.nb[1]);
+        const h1 = t["h" + F.c1], h2 = t["h" + F.c2];
+        if (n && n[F.m1] >= h1 - 1e-6 && n[F.m2] >= h2 - 1e-6 && n.bot <= t.bot + 1e-6) continue;
+        const P1 = [gx + F.p1[0], gy + F.p1[1]], P2 = [gx + F.p2[0], gy + F.p2[1]];
+        const sh = 0.67 + 0.09 * (nr[1] - nr[0]);
+        const part = (ha, hb, hc, hd) => pts([iso(P1[0], P1[1], ha), iso(P2[0], P2[1], hb), iso(P2[0], P2[1], hc), iso(P1[0], P1[1], hd)]);
+        const low = t.fallRing ? "#2a2420" : (t.bot === PIT_BOT && t.type !== "stair" ? COLORS.B : null);
+        if (low && Math.min(h1, h2) > SLAB + 1e-6) {
+          el("polygon", { class: "face", points: part(h1, h2, SLAB, SLAB), fill: shade(base, sh) }, g);
+          const lp = part(SLAB, SLAB, t.bot, t.bot);
+          el("polygon", { class: "face", points: lp, fill: shade(low, sh) }, g);
+          if (t.fallRing) el("polygon", { points: lp, fill: "url(#fadeDark)" }, g);
+        } else {
+          const poly = part(h1, h2, t.bot, t.bot);
+          el("polygon", { class: "face", points: poly, fill: shade(low || base, sh) }, g);
+          if (t.fallRing) el("polygon", { points: poly, fill: "url(#fadeDark)" }, g);
+        }
+      }
+    }
+    const quad = [iso(gx, gy, t.hA), iso(gx + 1, gy, t.hB), iso(gx + 1, gy + 1, t.hC), iso(gx, gy + 1, t.hD)];
+    if (t.type === "floor") {
+      el("polygon", { points: pts(quad), fill: COLORS[t.c], stroke: COLORS[t.c], "stroke-width": .6 }, g);
+      drawLips(g, gx, gy, t);
+    } else if (t.type === "fall") {
+      el("polygon", { points: pts(quad), fill: "url(#hatchFall)" }, g);
+    } else if (t.type === "struct") {
+      el("polygon", { class: "struct-top", points: pts(quad), fill: shade(STRUCT, 1.14) }, g);
+    } else if (t.type === "roof") {
+      drawRoof(g, gx, gy, t, quad);
+    } else {
+      drawStair(g, gx, gy, t);
+    }
+  }
+
+  function drawLips(g, gx, gy, t) {
+    const h = t.hA;
+    const edges = [
+      [at(gx, gy - 1), n => Math.min(n.hD, n.hC), [gx, gy], [gx + 1, gy]],
+      [at(gx + 1, gy), n => Math.min(n.hA, n.hD), [gx + 1, gy], [gx + 1, gy + 1]],
+      [at(gx, gy + 1), n => Math.min(n.hA, n.hB), [gx + 1, gy + 1], [gx, gy + 1]],
+      [at(gx - 1, gy), n => Math.min(n.hB, n.hC), [gx, gy + 1], [gx, gy]]
+    ];
+    for (const [n, f, p, q] of edges) {
+      if (!n || f(n) < h - 0.01) {
+        const a = iso(p[0], p[1], h), b = iso(q[0], q[1], h);
+        el("line", { class: "lip", x1: f1(a[0]), y1: f1(a[1]), x2: f1(b[0]), y2: f1(b[1]) }, g);
+      }
+    }
+  }
+
+  // 지붕: 경사면을 어두운 색으로 칠하고, 용마루·처마·끝선을 밝은 실선으로
+  function drawRoof(g, gx, gy, t, quad) {
+    el("polygon", { points: pts(quad), fill: ROOF, stroke: ROOF, "stroke-width": .6 }, g);
+    const [A, B, C, Dd] = quad;
+    const line = (p, q) => el("line", { class: "roof-line", x1: f1(p[0]), y1: f1(p[1]), x2: f1(q[0]), y2: f1(q[1]) }, g);
+    const isRoof = n => n && n.type === "roof";
+    if (t.s.axis === "y") {
+      line(A, B); line(Dd, C);
+      if (!isRoof(at(gx - 1, gy))) line(A, Dd);
+      if (!isRoof(at(gx + 1, gy))) line(B, C);
+    } else {
+      line(A, Dd); line(B, C);
+      if (!isRoof(at(gx, gy - 1))) line(A, B);
+      if (!isRoof(at(gx, gy + 1))) line(Dd, C);
+    }
+  }
+
+  function drawStair(g, gx, gy, t) {
+    const s = t.s, K = 4;
+    const hAt = u => s.a + (s.b - s.a) * u;
+    const P = (u, v) => s.axis === "x" ? iso(gx + u, gy + v, hAt(u)) : iso(gx + v, gy + u, hAt(u));
+    el("polygon", { points: pts([P(0, 0), P(1, 0), P(1, 1), P(0, 1)]), fill: STAIR_FILL, stroke: STAIR_FILL, "stroke-width": .6 }, g);
+    const next = s.axis === "x" ? at(gx + 1, gy) : at(gx, gy + 1);
+    for (let i = 0; i <= K; i++) {
+      if (i === K && next && next.type === "stair") continue;
+      const a = P(i / K, 0), b = P(i / K, 1);
+      el("line", { class: "step", x1: f1(a[0]), y1: f1(a[1]), x2: f1(b[0]), y2: f1(b[1]) }, g);
+    }
+  }
+
+  // 바닥 장식(꺾쇠, 거점, 화물 경로)은 겹치는 칸 중 가장 앞 칸을 그린 직후에 그린다
+  const tilesUnder = (x0, y0, x1, y1) => {
+    const out = [];
+    for (let gy = Math.max(0, Math.floor(y0)); gy <= Math.min(D - 1, Math.floor(y1)); gy++)
+      for (let gx = Math.max(0, Math.floor(x0)); gx <= Math.min(W - 1, Math.floor(x1)); gx++) out.push([gx, gy]);
+    return out;
+  };
+  const DECOR = [];
+  for (const c of CHEVRONS) DECOR.push({ tiles: tilesUnder(c.x - .6, c.y - .6, c.x + .6, c.y + .6), draw: g => drawChevron(g, c) });
+  DECOR.push({ tiles: tilesUnder(POINT.x - POINT.r, POINT.y - POINT.r, POINT.x + POINT.r, POINT.y + POINT.r), draw: drawPoint });
+  DECOR.push({ tiles: tilesUnder(TRACK[0][0] - .2, TRACK[0][1], TRACK[1][0] + .2, TRACK[1][1]), draw: drawTrack });
+
+  function drawChevron(g, c) {
+    const P = (al, ac) => {
+      const x = c.axis === "x" ? c.x + al : c.x + ac, y = c.axis === "x" ? c.y + ac : c.y + al;
+      return iso(x, y, heightAt(x, y));
+    };
+    for (const k of [-1, 1]) {
+      const mid = k * 0.18 * c.up;
+      const ch = [P(mid - 0.12 * c.up, -0.42), P(mid + 0.12 * c.up, 0), P(mid - 0.12 * c.up, 0.42)];
+      el("polyline", { class: "chev-bg", points: pts(ch) }, g);
+      el("polyline", { class: "chev", points: pts(ch) }, g);
+    }
+  }
+  function drawPoint(g) {
+    const ring = [];
+    for (let i = 0; i < 48; i++) {
+      const a = i / 48 * Math.PI * 2, x = POINT.x + Math.cos(a) * POINT.r, y = POINT.y + Math.sin(a) * POINT.r;
+      ring.push(iso(x, y, heightAt(x, y)));
+    }
+    el("polygon", { class: "point-fill", points: pts(ring) }, g);
+    el("polygon", { class: "point-line", points: pts(ring) }, g);
+  }
+  function drawTrack(g) {
+    const [a, b] = TRACK, n = 24, line = [];
+    for (let i = 0; i <= n; i++) {
+      const x = a[0] + (b[0] - a[0]) * i / n, y = a[1] + (b[1] - a[1]) * i / n;
+      line.push(iso(x, y, heightAt(x, y) + .01));
+    }
+    el("polyline", { class: "track", points: pts(line) }, g);
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / len, uy = (b[1] - a[1]) / len;
+    for (let d = 1.2; d < len - .3; d += 1.6) {
+      const cx = a[0] + ux * d, cy = a[1] + uy * d;
+      const P = (al, ac) => { const x = cx + ux * al - uy * ac, y = cy + uy * al + ux * ac; return iso(x, y, heightAt(x, y) + .01); };
+      el("polygon", { class: "track-arrow", points: pts([P(-.12, -.15), P(.14, 0), P(-.12, .15)]) }, g);
+    }
+  }
+
+
+  // ================= 색 =================
+  const TEAM = { ally: "#3fa9f5", enemy: "#f2464f" };
+  const TEAM_L = { ally: "#a9dcfd", enemy: "#ffb3b6" };
+  const HPC = { w: "#f3f5f7", a: "#f5a524", s: "#62c8ff", x: "#57d36b" };
+  const AMP = "#ffd66b";
+  // 효과 색 (인게임 연상): 연결선·상태 딱지·체력바 테두리·구역에 같이 쓴다
+  const FXC = { heal: "#ffd23f", anti: "#a45cff", dmg: "#3d7bff", hack: "#e25cff", zap: "#8fe8ff", drain: "#b46cff",
+    shield: "#62c8ff", poison: "#8b3fd9", chain: "#cfc6b4", bind: "#5fd97a", grip: "#ff7ac8", tether: "#4fb6ff" };
+  const HEAL = FXC.heal;
+  const TAGC = { "치유 불가": FXC.anti, "치유 증폭": FXC.heal, "공격력 증폭": FXC.dmg, "해킹": FXC.hack, "수면": "#b9c3ff",
+    "기절": "#ffffff", "넘어뜨림": "#ffffff", "이동기 봉쇄": "#d0d6de", "저지 불가": "#ffb13b", "치유 감소": "#c9a8ff",
+    "지속 치유": FXC.heal, "속도 증가": "#8ee05a", "속도 감소": "#9fdcff", "화상": "#ff8a3d", "독": FXC.poison, "출혈": "#ff5a5a" };
+  // 치유 불가·증폭은 체력바 테두리 색으로도 보여준다 (치유 불가가 우선)
+  const hpRing = tags => { const live = (tags || []).filter(x => x.rem > 0 || x.inf).map(x => x.k); return live.includes("치유 불가") ? FXC.anti : live.includes("치유 증폭") ? FXC.heal : null; };
+
+  // ================= 기본 배치 (3차와 같은 자리) =================
+  // hp: w=기본 생명력, a=방어구, s=보호막 [현재, 최대], x=추가 생명력 [현재]. 수치는 예시
+  const BASE = [
+    { id: "rein",    short: "라인",   full: "라인하르트", team: "ally",  role: "tank", x: 10.4, y: 7.0, ult: .45, hp: { w: [350, 350], a: [140, 300] } },
+    { id: "soldier", short: "솔저",   full: "솔저: 76",   team: "ally",  role: "dmg",  x: 11.0, y: 2.4, ult: .74, me: true, hp: { w: [178, 250] } },
+    { id: "pharah",  short: "파라",   full: "파라",       team: "ally",  role: "dmg",  x: 6.9,  y: 8.0, ult: 1,   air: 2.6, hp: { w: [205, 225] } },
+    { id: "mercy",   short: "메르시", full: "메르시",     team: "ally",  role: "sup",  x: 7.8,  y: 4.4, ult: .62, air: 1.5, hp: { w: [225, 225] } },
+    { id: "winston", short: "윈스턴", full: "윈스턴",     team: "enemy", role: "tank", x: 0.5,  y: 5.3, ult: .2,  air: 1.1, hp: { w: [350, 350], a: [90, 200] } },
+    { id: "genji",   short: "겐지",   full: "겐지",       team: "enemy", role: "dmg",  x: 5.5,  y: 0.8, ult: 1,   hp: { w: [112, 250] } },
+    { id: "ana",     short: "아나",   full: "아나",       team: "enemy", role: "sup",  x: 3.3,  y: 0.7, ult: .8,  hp: { w: [200, 250] } },
+    { id: "kiriko",  short: "키리코", full: "키리코",     team: "enemy", role: "sup",  x: 8.5,  y: 8.4, ult: .35, hp: { w: [225, 225] } }
+  ];
+  const BASE_CORPSES = [
+    { id: "lucio", short: "루시우", full: "루시우",       team: "ally",  role: "sup", x: 12.4, y: 4.6 },
+    { id: "widow", short: "위도우", full: "위도우메이커", team: "enemy", role: "dmg", x: 1.5,  y: 1.2 }
+  ];
+  const CD_STATE = { ana: { name: "수면총", total: 14, rem: 9 }, kiriko: { name: "방울", total: 15, rem: 11 } };
+  const HUD_CD = { sprint: { total: 0, rem: 0 }, field: { total: 15, rem: 12 }, rocket: { total: 6, rem: 4 } };
+
+  // ================= 계산 도우미 =================
+  const clamp01 = v => Math.max(0, Math.min(1, v));
+  const seg = (t, a, b) => clamp01((t - a) / (b - a));
+  const eo = u => 1 - Math.pow(1 - u, 3);
+  const eio = u => u < .5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2;
+  const lerp = (a, b, u) => a + (b - a) * u;
+  const rnd = i => { const v = Math.sin(i * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
+  const angTo = (a, b) => Math.atan2(b.y - a.y, b.x - a.x);
+  const LIFT = 12 / HS;                                   // 땅에 선 토큰의 몸 중심 높이
+  const bodyH = a => heightAt(a.x, a.y) + Math.max(a.air || 0, LIFT);
+  const BP = a => iso(a.x, a.y, bodyH(a));
+  const S3 = p => iso(p.x, p.y, p.h);
+  const at3 = a => ({ x: a.x, y: a.y, h: bodyH(a) });
+  const arc3 = (p0, p1, u, peak) => ({ x: lerp(p0.x, p1.x, u), y: lerp(p0.y, p1.y, u), h: lerp(p0.h, p1.h, u) + peak * 4 * u * (1 - u) });
+  const lerp2 = (p, q, u) => [lerp(p[0], q[0], u), lerp(p[1], q[1], u)];
+  const toward = (p, q, d) => { const dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy) || 1; return [p[0] + dx / L * d, p[1] + dy / L * d]; };
+  const setBody = (a, p) => { a.x = p.x; a.y = p.y; a.air = Math.max(0, p.h - heightAt(p.x, p.y)); };
+  const shots = (t, t0, step, n) => Math.max(0, Math.min(n, Math.floor((t - t0) / step) + 1));
+  const cloneHp = hp => { const o = {}; for (const k in hp) o[k] = hp[k].slice(); return o; };
+  function polyAt(P, u) {                                  // 꺾인 선 위에서 길이 비율 u 지점
+    const L = []; let tot = 0;
+    for (let i = 1; i < P.length; i++) { const l = Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]); L.push(l); tot += l; }
+    let d = u * tot;
+    for (let i = 0; i < L.length; i++) { if (d <= L[i] || i === L.length - 1) { const k = L[i] ? Math.min(1, d / L[i]) : 0; return [lerp(P[i][0], P[i + 1][0], k), lerp(P[i][1], P[i + 1][1], k)]; } d -= L[i]; }
+    return P[P.length - 1];
+  }
+
+  // ================= 가려진 영웅 찾기 (D-023) =================
+  // 영웅 몸 아래에서 보는 사람 쪽으로 선을 쏴서, 그 선을 가로막는 지형이 있으면 가려진 것
+  const occCache = new Map();
+  function isOccluded(x, y, air) {
+    const key = ANG.toFixed(4) + "|" + x.toFixed(2) + "," + y.toFixed(2) + "," + (air || 0).toFixed(2);
+    const hit = occCache.get(key);
+    if (hit !== undefined) return hit;
+    const c = Math.cos(ANG), s = Math.sin(ANG);
+    const gx = Math.floor(x), gy = Math.floor(y);
+    const h0 = heightAt(x, y) + 0.03 + (air || 0);
+    const [rx0, ry0] = rot(x, y);
+    let res = false;
+    for (let k = 1; k < 500; k++) {
+      const tt = k * 0.06, rx = rx0 + tt / 2, ry = ry0 + tt / 2, h = h0 + tt * TH / (2 * HS);
+      if (h > 2.2) break;
+      const X = rx * c + ry * s + CX, Y = -rx * s + ry * c + CY;
+      if (X < 0 || Y < 0 || X >= W || Y >= D) break;
+      const tx = Math.floor(X), ty = Math.floor(Y);
+      if (tx === gx && ty === gy) continue;
+      if (h < heightAt(X, Y) - 0.01 && h > at(tx, ty).bot) { res = true; break; }
+    }
+    if (occCache.size > 6000) occCache.clear();
+    occCache.set(key, res);
+    return res;
+  }
+
+  // ================= 글자 폭 재기 (딱지 너비용) =================
+  const measureEl = document.getElementById("measure");
+  const twCache = new Map();
+  const textW = s => {
+    if (!twCache.has(s)) { measureEl.textContent = s; let w = 0; try { w = measureEl.getComputedTextLength(); } catch (e) {} twCache.set(s, w || s.length * 10.5); }
+    return twCache.get(s);
+  };
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { twCache.clear(); redraw(); });
+
+  // ================= 체력 4색 (D-030) =================
+  const HPNAME = { w: "기본", a: "방어구", s: "보호막", x: "추가 생명력" };
+  const hpSum = hp => { let c = 0, m = 0; for (const k of ["w", "a", "s"]) if (hp[k]) { c += hp[k][0]; m += hp[k][1]; } if (hp.x) c += hp.x[0]; return [c, m]; };
+  const hpText = hp => ["w", "a", "s", "x"].filter(k => hp[k] && (k !== "x" || hp.x[0] > 0))
+    .map(k => HPNAME[k] + " " + (k === "x" ? Math.round(hp.x[0]) : Math.round(hp[k][0]) + "/" + hp[k][1])).join(", ");
+  function drawHpBar(g, hp, y, w, ring) {
+    const [, m] = hpSum(hp), sc = w / m, parts = ["w", "a", "s"].filter(k => hp[k]);
+    const xw = hp.x && hp.x[0] > 0 ? hp.x[0] * sc : 0;
+    const total = w + (xw ? xw + 1 : 0) + (parts.length - 1);
+    let x = -total / 2;
+    if (ring) el("rect", { x: f1(x - 3.6), y: f1(y - 3.6), width: f1(total + 7.2), height: 13.2, rx: 2.5, fill: "none", stroke: ring, "stroke-width": 2.4 }, g);
+    el("rect", { class: "hp-bg", x: f1(x - 1.5), y: f1(y - 1.5), width: f1(total + 3), height: 9, rx: 1.5 }, g);
+    for (const k of parts) {
+      const pw = hp[k][1] * sc;
+      el("rect", { class: "hp-empty", x: f1(x), y: f1(y), width: f1(pw), height: 6 }, g);
+      if (hp[k][0] > 0) el("rect", { x: f1(x), y: f1(y), width: f1(Math.min(hp[k][0], hp[k][1]) * sc), height: 6, fill: HPC[k] }, g);
+      x += pw + 1;
+    }
+    if (xw) el("rect", { x: f1(x), y: f1(y), width: f1(xw), height: 6, fill: HPC.x }, g);
+  }
+
+  // ================= 상태 딱지 기준 (D-039 제안) =================
+  // D-039: 1순위 제어·위험(항상), 2순위 강화·약화(문제에 관련 있으면), 3순위 자잘한 버프(해설에서 짚을 때만)
+  const TIER = { "기절": 1, "수면": 1, "넘어뜨림": 1, "해킹": 1, "이동기 봉쇄": 1, "저지 불가": 1, "치유 불가": 1,
+    "공격력 증폭": 2, "치유 증폭": 2, "화상": 2, "출혈": 2, "독": 2, "속도 감소": 2,
+    "치유 감소": 3, "지속 치유": 3, "속도 증가": 3 };
+  const tagMode = "prop";                               // D-039 확정: 제안안
+  function pickTags(tags) {
+    const live = tags.filter(x => x.rem > 0 || x.inf).sort((p, q) => (TIER[p.k] || 3) - (TIER[q.k] || 3) || q.rem - p.rem);
+    if (tagMode === "all") return { show: live, more: 0 };
+    const cap = tagMode === "t1" ? 1 : 2;
+    const l = live.filter(x => (TIER[x.k] || 3) <= cap);
+    return { show: l.slice(0, 2), more: Math.max(0, l.length - 2) };
+  }
+  function drawStatusTags(g, tags) {
+    const { show, more } = pickTags(tags);
+    let y = -17;
+    for (const tg of show) {
+      const w = textW(tg.k) + 32;
+      const b = el("g", { class: "info", transform: `translate(${f1(-22 - w)},${y})` }, g);
+      const col = TAGC[tg.k] || TEAM[tg.by];
+      el("rect", { class: "st-bg", width: f1(w), height: 21, rx: 3, stroke: col }, b);
+      const box = el("g", { transform: "translate(4,3) skewX(-10)" }, b);
+      el("rect", { class: "st-box", width: 15, height: 15 }, box);
+      const f = tg.inf ? 1 : clamp01(tg.rem / tg.T), hh = 14 * f;
+      el("rect", { x: .5, y: f1(15.5 - hh - .5), width: 14, height: f1(hh), fill: col, "fill-opacity": .6 }, box);
+      el("text", { class: "cd-num", x: 9, y: 12 }, box).textContent = tg.inf ? "" : Math.ceil(tg.rem);
+      el("text", { class: "st-name", x: 25, y: 14.5 }, b).textContent = tg.k;
+      y += 24;
+    }
+    if (more) {
+      const b = el("g", { class: "info", transform: `translate(-48,${y})` }, g);
+      el("rect", { class: "st-bg", width: 26, height: 17, rx: 3, stroke: "rgba(255,255,255,.5)" }, b);
+      el("text", { class: "st-more", x: 13, y: 13 }, b).textContent = "+" + more;
+    }
+  }
+  function drawCdTag(g, cd) {
+    const b = el("g", { class: "info" + (cd.rem <= 0 ? " cd-ready" : ""), transform: "translate(22,-11)" }, g);
+    const w = textW(cd.name) + 33;
+    el("rect", { class: "cd-bg", x: 0, y: 0, height: 22, rx: 3, width: f1(w) }, b);
+    const box = el("g", { transform: "translate(4,3) skewX(-10)" }, b);
+    el("rect", { class: "cd-box", width: 16, height: 16 }, box);
+    const hh = 15 * clamp01(cd.rem / cd.total);
+    el("rect", { class: "cd-fill", x: .5, y: f1(15.5 - hh), width: 15, height: f1(Math.max(0, hh)) }, box);
+    el("text", { class: "cd-num", x: 9.5, y: 12.5 }, box).textContent = cd.rem > 0 ? Math.ceil(cd.rem) : "";
+    el("text", { class: "cd-name", x: 25, y: 15 }, b).textContent = cd.name;
+  }
+
+  // ================= 토큰 그리기 =================
+  let dimOn = true;
+  function wavyPath(r, amp, n, ph) {
+    let d = "";
+    for (let i = 0; i <= 72; i++) {
+      const a = i / 72 * Math.PI * 2, rr = r + amp * Math.sin(a * n + ph);
+      d += (i ? "L" : "M") + f1(Math.cos(a) * rr) + "," + f1(Math.sin(a) * rr);
+    }
+    return d + "Z";
+  }
+  function heroItem(a, SH, now) {
+    const fl = iso(a.x, a.y, heightAt(a.x, a.y)), c = BP(a);
+    const airy = (a.air || 0) > LIFT + .02;
+    const dim = a.dim && dimOn;
+    const sop = (a.fade == null ? 1 : a.fade) * (dim ? .35 : 1);
+    if (airy) {
+      el("ellipse", { class: "air-shadow", cx: f1(fl[0]), cy: f1(fl[1]), rx: 13, ry: 6.5, opacity: sop.toFixed(2) }, SH);
+      if (c[1] + 18 < fl[1]) el("line", { class: "air-line", x1: f1(fl[0]), y1: f1(fl[1]), x2: f1(c[0]), y2: f1(c[1] + 18), opacity: sop.toFixed(2) }, SH);
+    } else el("ellipse", { class: "gnd-shadow", cx: f1(fl[0]), cy: f1(fl[1]), rx: 12, ry: 5.5, opacity: sop.toFixed(2) }, SH);
+    return { d: depth(a.x, a.y) + (a.air || 0) * .001, fn: P => {
+      const g = el("g", { class: "token " + a.team + (a.me ? " me" : "") + (dim ? " dim" : ""), transform: `translate(${f1(c[0])},${f1(c[1])})` }, P);
+      const occl = isOccluded(a.x, a.y, a.air || 0);
+      const sil = a.silhouette || 0;                       // 전체 노출: 벽 너머에서도 붉은 실루엣
+      const hidden = !a.revealed && !sil && occl;
+      let op = hidden ? .45 : 1;
+      if (a.fade != null) op *= a.fade;
+      if (dim) op *= .28;
+      if (op < .999) g.setAttribute("opacity", op.toFixed(2));
+      if (sil) el("circle", { r: 22, fill: "#ff2433", opacity: (.55 * sil).toFixed(2), filter: "url(#fGlow)" }, g);
+      el("title", {}, g).textContent = `${a.full}, ${a.team === "ally" ? "아군" : "적"}, 체력 ${hpText(a.hp)}, 궁극기 ${Math.round((a.ult || 0) * 100)}%`
+        + (airy ? ", 공중" : "") + (hidden ? ", 가려진 자리" : "");
+      if (hidden && !dim) el("circle", { class: "hidden-ring", r: 25 }, g);
+      if (a.me) el("circle", { class: "me-ring", r: 22.5 }, g);
+      if (a.revealed) {
+        const pk = .65 + .35 * Math.sin(now * 6);
+        el("circle", { r: 20.5, fill: "none", stroke: TEAM[a.revealed], "stroke-width": 3.4, opacity: pk.toFixed(2), filter: "url(#fGlow)" }, g);
+      }
+      if (!dim) {
+        el("circle", { class: "ult-trk info", r: 17.5 }, g);
+        const prg = el("circle", { class: "ult-prg info" + (a.ult >= 1 ? " ready" : ""), r: 17.5, pathLength: 100,
+          "stroke-dasharray": `${Math.round((a.ult || 0) * 100)} 100`, transform: "rotate(-90)" }, g);
+        if (a.ult >= 1) { prg.setAttribute("filter", "url(#fGlow)"); prg.setAttribute("opacity", (.75 + .25 * Math.sin(now * 4)).toFixed(2)); }
+      }
+      if (a.mode === "wraith") {
+        el("path", { d: wavyPath(18.5, 2.2, 7, now * 5), fill: "none", stroke: TEAM[a.team], "stroke-width": 4, opacity: .55 }, g);
+        el("path", { d: wavyPath(18.5, 2.2, 7, now * 5), fill: "none", stroke: "#fff", "stroke-width": 1.4, opacity: .9 }, g);
+      }
+      const body = el("circle", { class: "body", r: 14.5 }, g);
+      if (a.mode === "wraith") body.setAttribute("fill-opacity", ".55");
+      if (sil && occl) body.setAttribute("fill", "#ff2433");
+      if (a.mode === "scope") {
+        el("use", { href: "#g-" + a.role, x: -7.5, y: -7.5, width: 15, height: 15, class: "glyph", opacity: .28 }, g);
+        const sc = el("g", { fill: "none", stroke: "rgba(255,255,255,.85)", "stroke-width": 1.3 }, g);
+        el("circle", { r: 9.5 }, sc);
+        el("path", { d: "M0-12.5V-4M0 4V12.5M-12.5 0H-4M4 0H12.5" }, sc);
+        el("circle", { r: 1.3, fill: "#fff", stroke: "none" }, g);
+      } else el("use", { href: "#g-" + a.role, x: -7.5, y: -7.5, width: 15, height: 15, class: "glyph", opacity: sil && occl ? .35 : 1 }, g);
+      if (sil) el("circle", { r: 16, fill: "none", stroke: "#ff6b73", "stroke-width": 2.8, opacity: sil.toFixed(2) }, g);
+      if (a.bubble && a.bubble.k > 0) {                      // 무적 막 (구원의 손길 등): 스킬 색으로 토큰을 감쌈
+        const bk = a.bubble.k;
+        el("circle", { r: f1(24 * bk), fill: a.bubble.c, "fill-opacity": .3, stroke: a.bubble.c, "stroke-width": 2.6 }, g);
+        el("path", { d: `M${f1(-15 * bk)},${f1(-11 * bk)} A${f1(19 * bk)},${f1(19 * bk)} 0 0 1 ${f1(2 * bk)},${f1(-19 * bk)}`, fill: "none", stroke: "#fff", "stroke-width": 1.6, opacity: .75 }, g);
+      }
+      if (!dim) {
+        const hb = el("g", { class: "info" }, g);
+        drawHpBar(hb, a.hp, -34, 38, hpRing(a.tags));
+      }
+      el("text", { class: "tag", y: 33 }, g).textContent = a.me ? a.short + " (나)" : a.short;
+      if (a.modeLabel && !dim) {
+        const w = textW(a.modeLabel) + 12;
+        const m = el("g", { class: "info", transform: `translate(${f1(-w / 2)},38)` }, g);
+        el("rect", { width: f1(w), height: 16, rx: 8, fill: TEAM[a.team], stroke: "rgba(10,10,12,.85)", "stroke-width": 1.2 }, m);
+        el("text", { class: "mode-chip", x: f1(w / 2), y: 11.5, "text-anchor": "middle" }, m).textContent = a.modeLabel;
+      }
+      if (!dim && a.cd) drawCdTag(g, a.cd);
+      if (!dim && a.tags && a.tags.length) drawStatusTags(g, a.tags);
+    } };
+  }
+  function corpseItem(a, SH) {
+    const fl = iso(a.x, a.y, heightAt(a.x, a.y));
+    const dim = a.dim && dimOn;
+    el("ellipse", { class: "gnd-shadow", cx: f1(fl[0]), cy: f1(fl[1]), rx: 12, ry: 5, opacity: dim ? .35 : 1 }, SH);
+    return { d: depth(a.x, a.y), fn: P => {
+      const g = el("g", { class: "corpse " + a.team, transform: `translate(${f1(fl[0])},${f1(fl[1] - 5)})` }, P);
+      const hidden = isOccluded(a.x, a.y, 0);
+      let op = hidden ? .45 : 1;
+      if (dim) op *= .3;
+      if (op < 1) g.setAttribute("opacity", op.toFixed(2));
+      if (hidden && !dim) el("circle", { class: "hidden-ring", r: 17 }, g);
+      el("title", {}, g).textContent = `${a.full}, ${a.team === "ally" ? "아군" : "적"}, 쓰러짐`;
+      const body = el("g", { transform: "scale(1,.8)" }, g);
+      el("circle", { class: "corpse-body", r: 12.5 }, body);
+      el("use", { href: "#g-" + a.role, x: -6.5, y: -6.5, width: 13, height: 13, class: "corpse-glyph" }, body);
+      el("text", { class: "tag", y: 25 }, g).textContent = a.short;
+    } };
+  }
+  function payloadItem(a, SH) {
+    const fl = iso(a.x, a.y, heightAt(a.x, a.y));
+    const dim = a.dim && dimOn;
+    el("ellipse", { class: "gnd-shadow", cx: f1(fl[0]), cy: f1(fl[1]), rx: 17, ry: 7, opacity: dim ? .35 : 1 }, SH);
+    return { d: depth(a.x, a.y), fn: P => {
+      const g = el("g", { transform: `translate(${f1(fl[0])},${f1(fl[1] - 14)})` }, P);
+      let op = isOccluded(a.x, a.y, 0) ? .45 : 1;
+      if (dim) op *= .35;
+      if (op < 1) g.setAttribute("opacity", op.toFixed(2));
+      el("title", {}, g).textContent = "화물";
+      el("rect", { class: "payload-body", x: -17, y: -11, width: 34, height: 20, rx: 4 }, g);
+      el("rect", { class: "payload-band", x: -16, y: -10, width: 32, height: 5, rx: 2 }, g);
+      el("circle", { class: "payload-wheel", cx: -10, cy: 10, r: 3.6 }, g);
+      el("circle", { class: "payload-wheel", cx: 10, cy: 10, r: 3.6 }, g);
+      el("text", { class: "tag maplabels", y: 28 }, g).textContent = "화물";
+    } };
+  }
+
+  // ================= 효과 그리기 도구 =================
+  const P2 = p => f1(p[0]) + "," + f1(p[1]);
+  function line(g, p, q, attrs) { return el("line", Object.assign({ x1: f1(p[0]), y1: f1(p[1]), x2: f1(q[0]), y2: f1(q[1]) }, attrs), g); }
+  // 즉발 사격: 팀 색 선 + 흰 심
+  function tracer(g, p, q, team, k, w) {
+    w = w || 3;
+    line(g, p, q, { stroke: TEAM[team], "stroke-width": w, "stroke-linecap": "round", opacity: (.9 * k).toFixed(2) });
+    line(g, p, q, { stroke: "#fff", "stroke-width": f1(w * .4), "stroke-linecap": "round", opacity: k.toFixed(2) });
+  }
+  function spark(g, p, k, color, r) {
+    r = r || 7;
+    el("circle", { cx: f1(p[0]), cy: f1(p[1]), r: f1(r * (.55 + .7 * (1 - k))), fill: "none", stroke: color || "#fff", "stroke-width": 1.8, opacity: k.toFixed(2) }, g);
+    el("circle", { cx: f1(p[0]), cy: f1(p[1]), r: f1(r * .35 * k + .5), fill: "#fff", opacity: k.toFixed(2) }, g);
+  }
+  // 투사체: 머리(흰 점) + 뒤로 가늘어지는 꼬리
+  function bullet(g, trail, team, r, color) {
+    const col = color || TEAM[team];
+    for (let i = trail.length - 1; i > 0; i--) {
+      const u = i / trail.length;
+      line(g, trail[i], trail[i - 1], { stroke: col, "stroke-width": f1(lerp(r * 1.05, .8, u)), "stroke-linecap": "round", opacity: ((1 - u) * .9).toFixed(2) });
+    }
+    if (trail.length) el("circle", { cx: f1(trail[0][0]), cy: f1(trail[0][1]), r: r || 3.3, fill: "#fff", stroke: col, "stroke-width": 1.7 }, g);
+  }
+  const trailOf = (fn, u, n, du) => { const out = []; for (let i = 0; i < (n || 7); i++) { const uu = u - i * (du || .025); if (uu < 0) break; out.push(fn(uu)); } return out; };
+  function circlePts(x, y, r, h, n) {
+    n = n || 48; const out = [];
+    for (let i = 0; i < n; i++) {
+      const a = i / n * Math.PI * 2, px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
+      out.push(iso(px, py, h == null ? heightAt(px, py) + .02 : h));
+    }
+    return out;
+  }
+  function fanPts(x, y, h, dir, half, r, from, to) {
+    const a0 = dir - half + 2 * half * (from || 0), a1 = dir - half + 2 * half * (to == null ? 1 : to);
+    const out = [iso(x, y, h)];
+    for (let i = 0; i <= 20; i++) { const a = lerp(a0, a1, i / 20); out.push(iso(x + Math.cos(a) * r, y + Math.sin(a) * r, h)); }
+    return out;
+  }
+  const arcXY = (x, y, dir, half, r, n) => { const out = []; n = n || 16; for (let i = 0; i <= n; i++) { const a = dir - half + 2 * half * i / n; out.push([x + Math.cos(a) * r, y + Math.sin(a) * r]); } return out; };
+  const wallPts = (xy, h0, h1) => xy.map(p => iso(p[0], p[1], h0)).concat(xy.slice().reverse().map(p => iso(p[0], p[1], h1)));
+  function arrowHead(g, p, q, size, fill, op) {
+    const dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
+    const a = [q[0] - ux * size - uy * size * .6, q[1] - uy * size + ux * size * .6];
+    const b = [q[0] - ux * size + uy * size * .6, q[1] - uy * size - ux * size * .6];
+    el("polygon", { points: pts([q, a, b]), fill, stroke: "rgba(10,10,12,.85)", "stroke-width": 1.2, "stroke-linejoin": "round", opacity: (op == null ? 1 : op).toFixed(2) }, g);
+  }
+  // 이동 경로 화살표 (점선) — 영웅이나 물체가 움직이는 길 (D-032)
+  function pathArrow(g, sp, team, k, w, dash) {
+    if (sp.length < 2 || k <= 0) return;
+    w = w || 3; dash = dash === undefined ? "8 6" : dash;
+    const base = { points: pts(sp), fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round", opacity: k.toFixed(2) };
+    if (dash) base["stroke-dasharray"] = dash;
+    el("polyline", Object.assign({}, base, { stroke: "rgba(10,10,12,.75)", "stroke-width": f1(w + 2.6) }), g);
+    el("polyline", Object.assign({}, base, { stroke: TEAM_L[team], "stroke-width": w }), g);
+    let i = sp.length - 2;
+    while (i > 0 && Math.hypot(sp[i][0] - sp[sp.length - 1][0], sp[i][1] - sp[sp.length - 1][1]) < 6) i--;
+    arrowHead(g, sp[i], sp[sp.length - 1], w * 3.3, TEAM_L[team], k);
+  }
+  function ringArc(g, c, r, frac, stroke, w, op) {
+    op = op == null ? 1 : op;
+    el("circle", { cx: f1(c[0]), cy: f1(c[1]), r, fill: "none", stroke: "rgba(10,10,12,.72)", "stroke-width": w + 2.4, opacity: op.toFixed(2) }, g);
+    el("circle", { cx: f1(c[0]), cy: f1(c[1]), r, fill: "none", stroke, "stroke-width": w, pathLength: 100,
+      "stroke-dasharray": `${(clamp01(frac) * 100).toFixed(1)} 100`, transform: `rotate(-90 ${f1(c[0])} ${f1(c[1])})`, opacity: op.toFixed(2) }, g);
+  }
+  function miniBar(g, c, w, frac, color, op) {
+    const x = c[0] - w / 2;
+    el("rect", { x: f1(x - 1.5), y: f1(c[1] - 1.5), width: f1(w + 3), height: 8, rx: 1.5, fill: "rgba(10,10,12,.88)", opacity: op == null ? 1 : op }, g);
+    el("rect", { x: f1(x), y: f1(c[1]), width: f1(w * clamp01(frac)), height: 5, fill: color, opacity: op == null ? 1 : op }, g);
+  }
+  function fxLabel(g, p, text, k, cls) {
+    const t = el("text", { class: cls || "fx-label", x: f1(p[0]), y: f1(p[1]), opacity: (k == null ? 1 : k).toFixed(2) }, g);
+    t.textContent = text;
+    return t;
+  }
+  function band(g, p, q, w, team, k) {       // 광선·분사: 굵은 반투명 띠
+    const dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy) || 1, nx = -dy / L * w / 2, ny = dx / L * w / 2;
+    el("polygon", { points: pts([[p[0] + nx * .5, p[1] + ny * .5], [q[0] + nx, q[1] + ny], [q[0] - nx, q[1] - ny], [p[0] - nx * .5, p[1] - ny * .5]]),
+      fill: TEAM[team], opacity: (.42 * k).toFixed(2) }, g);
+    line(g, p, q, { stroke: TEAM_L[team], "stroke-width": f1(w * .35), "stroke-linecap": "round", opacity: (.7 * k).toFixed(2) });
+    line(g, p, q, { stroke: "#fff", "stroke-width": 1.3, opacity: (.8 * k).toFixed(2) });
+  }
+  // 연결선: 역할 색 선 + 흰 심 + 흐르는 알갱이 (reverse면 q에서 p 쪽으로 흐름)
+  function linkBeam(g, p, q0, color, k, u, t, o) {
+    o = o || {};
+    if (k <= 0) return;
+    const q = lerp2(p, q0, u), w = o.w || 3.6;
+    line(g, p, q, { stroke: "rgba(10,10,12,.7)", "stroke-width": f1(w + 3), "stroke-linecap": "round", opacity: (.65 * k).toFixed(2) });
+    const main = { stroke: color, "stroke-width": w, "stroke-linecap": "round", opacity: k.toFixed(2) };
+    if (o.dash) main["stroke-dasharray"] = o.dash;
+    line(g, p, q, main);
+    if (!o.dash) line(g, p, q, { stroke: "#fff", "stroke-width": 1.1, opacity: (.75 * k).toFixed(2) });
+    for (let j = 0; j < 3; j++) {
+      let f = (t * .9 + j / 3) % 1;
+      if (o.reverse) f = 1 - f;
+      if (f > u) continue;
+      const d = lerp2(p, q0, f);
+      el("circle", { cx: f1(d[0]), cy: f1(d[1]), r: 3, fill: "#fff", stroke: color, "stroke-width": 1.4, opacity: k.toFixed(2) }, g);
+    }
+  }
+  function zigzag(g, p, q, color, k, seed) {
+    if (k <= 0) return;
+    const n = 7, P = [p], dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L;
+    for (let i = 1; i < n; i++) { const f = i / n, off = (rnd(seed * 13 + i) - .5) * 16; P.push([p[0] + dx * f + nx * off, p[1] + dy * f + ny * off]); }
+    P.push(q);
+    const base = { points: pts(P), fill: "none", "stroke-linejoin": "round", "stroke-linecap": "round" };
+    el("polyline", Object.assign({}, base, { stroke: color, "stroke-width": 6, opacity: (.4 * k).toFixed(2), filter: "url(#fGlow)" }), g);
+    el("polyline", Object.assign({}, base, { stroke: color, "stroke-width": 2.6, opacity: k.toFixed(2) }), g);
+    el("polyline", Object.assign({}, base, { stroke: "#fff", "stroke-width": 1, opacity: k.toFixed(2) }), g);
+  }
+  // 이름표 (임시 물체·설치물 이름)
+  function nameChip(g, cx, y, text, col) {
+    const w = textW(text) + 14;
+    const c = el("g", { transform: `translate(${f1(cx - w / 2)},${f1(y)})` }, g);
+    el("rect", { width: f1(w), height: 17, rx: 8.5, fill: "rgba(14,14,16,.9)", stroke: col || "rgba(255,255,255,.6)", "stroke-width": 1.4 }, c);
+    el("text", { class: "mode-chip", x: f1(w / 2), y: 12.2, "text-anchor": "middle" }, c).textContent = text;
+  }
+  // 세운 막 (방벽 등): 팀 색 반투명 면 + 윗선
+  function wallShape(g, xy, h0, h1, team, o) {
+    o = o || {};
+    const poly = wallPts(xy, h0, h1);
+    el("polygon", { points: pts(poly), fill: o.fill || TEAM[team], "fill-opacity": o.alpha == null ? .28 : o.alpha, stroke: "none" }, g);
+    const top = xy.map(p => iso(p[0], p[1], h1)), bot = xy.map(p => iso(p[0], p[1], h0));
+    const st = { fill: "none", stroke: o.edge || TEAM_L[team], "stroke-width": o.w || 2, "stroke-linejoin": "round", "stroke-linecap": "round" };
+    if (o.dash) st["stroke-dasharray"] = o.dash;
+    el("polyline", Object.assign({ points: pts(top) }, st), g);
+    el("polyline", Object.assign({ points: pts(bot) }, st, { opacity: .55 }), g);
+    line(g, top[0], bot[0], Object.assign({}, st, { opacity: .7 }));
+    line(g, top[top.length - 1], bot[bot.length - 1], Object.assign({}, st, { opacity: .7 }));
+    return top;
+  }
+  // 작은 상자 (포탑 같은 부술 수 있는 구조물)
+  function boxShape(g, x, y, h0, s, hh, team) {
+    const c = Math.cos(ANG), sn = Math.sin(ANG);
+    const faces = [[[1, 0], [x + s, y - s], [x + s, y + s]], [[0, 1], [x + s, y + s], [x - s, y + s]], [[-1, 0], [x - s, y + s], [x - s, y - s]], [[0, -1], [x - s, y - s], [x + s, y - s]]];
+    for (const [n, p, q] of faces) {
+      const nr = [n[0] * c - n[1] * sn, n[0] * sn + n[1] * c];
+      if (nr[0] + nr[1] <= 1e-6) continue;
+      const sh = .55 + .1 * (nr[1] - nr[0]);
+      el("polygon", { points: pts([iso(p[0], p[1], h0), iso(q[0], q[1], h0), iso(q[0], q[1], h0 + hh), iso(p[0], p[1], h0 + hh)]),
+        fill: shade("#4a4d53", sh * 1.4), stroke: TEAM[team], "stroke-width": 1.4, "stroke-linejoin": "round" }, g);
+    }
+    el("polygon", { points: pts([iso(x - s, y - s, h0 + hh), iso(x + s, y - s, h0 + hh), iso(x + s, y + s, h0 + hh), iso(x - s, y + s, h0 + hh)]),
+      fill: "#6a6e75", stroke: TEAM[team], "stroke-width": 1.8, "stroke-linejoin": "round" }, g);
+  }
+
+  // ================= 분류별 대표 장면 =================
+  // 원본: 영웅-통합-매핑표_확정.xlsx '분류 확정안' 시트. n = 매핑표에서 그 분류가 쓰인 줄 수 (확정·보조·추가 칸 합계, 보류 제외)
+  // ok: true = 보드 표시 확정, false = (Claude 제안) 시안 확인 전
+  // 장면마다 focus(주인공들), guests(시연용으로 잠깐 나오는 영웅), place(자리 옮김), hide(숨김), anim(시간에 따른 상태), fx(효과 그림)
+  const G = (id, short, full, team, role, x, y, hp, more) => Object.assign({ id, short, full, team, role, x, y, hp, ult: .5, guest: true }, more || {});
+
+  // 연결선 색표 (매핑표에서 연결선이 쓰인 19줄 기준, 역할별)
+  const LINK_TABLE = [
+    { c: FXC.heal, name: "치유", who: "메르시 치유 빔·빠른 치유·발키리, 브리기테 수리 팩, 모이라 치유 구슬, 우양 회복의 물결" },
+    { c: FXC.dmg, name: "공격력 증폭", who: "메르시 공격력 증폭·연쇄 증폭, 아나 나노 강화제" },
+    { c: FXC.hack, name: "해킹", who: "솜브라 해킹·바이러스 복제" },
+    { c: FXC.zap, name: "전기 (지그재그)", who: "윈스턴 연쇄 번개" },
+    { c: FXC.drain, name: "흡수·피해", who: "모이라 생체 손아귀(흡수)·공격 구슬" },
+    { c: FXC.shield, name: "보호막 (점선)", who: "시메트라 보호막 배터리" },
+    { c: FXC.poison, name: "독", who: "위도우메이커 추적 지뢰" },
+    { c: FXC.chain, name: "사슬", who: "로드호그 사슬 갈고리(10/6 리워크 뒤 재확인)" },
+    { c: FXC.bind, name: "속박 사슬", who: "미즈키 속박 사슬" },
+    { c: FXC.grip, name: "구원의 손길", who: "라이프위버" },
+    { c: FXC.tether, name: "견인", who: "제트팩 캣 생명줄·납치한다냥" }
+  ];
+  // 임시 물체: 작은 아이콘 + 팀 색 점선 테두리 + 시간 고리 + 이름표
+  function tempObj(F, pos, team, frac, sc, kind, name) {
+    const h = heightAt(pos.x, pos.y);
+    F.z(depth(pos.x, pos.y), g => {
+      const c = iso(pos.x, pos.y, h + .3), fl = iso(pos.x, pos.y, h);
+      el("ellipse", { cx: f1(c[0]), cy: f1(fl[1]), rx: 7, ry: 3, fill: "rgba(0,0,0,.4)" }, g);
+      el("title", {}, g).textContent = name + " (" + (team === "ally" ? "아군" : "적") + " 임시 물체, 체력 없음)";
+      el("circle", { cx: f1(c[0]), cy: f1(c[1]), r: f1(10 * sc), fill: "rgba(14,14,16,.55)", stroke: TEAM[team], "stroke-width": 1.8, "stroke-dasharray": "3 2.4" }, g);
+      if (kind === "seed") el("path", { d: `M${f1(c[0])},${f1(c[1] - 6 * sc)} C${f1(c[0] + 6 * sc)},${f1(c[1] - 1 * sc)} ${f1(c[0] + 3 * sc)},${f1(c[1] + 5 * sc)} ${f1(c[0])},${f1(c[1] + 5 * sc)} C${f1(c[0] - 3 * sc)},${f1(c[1] + 5 * sc)} ${f1(c[0] - 6 * sc)},${f1(c[1] - 1 * sc)} ${f1(c[0])},${f1(c[1] - 6 * sc)}Z`,
+        fill: "#ffc4e4", stroke: "#15161a", "stroke-width": 1 }, g);
+      else el("circle", { cx: f1(c[0]), cy: f1(c[1]), r: f1(5 * sc), fill: "#f6efe6", stroke: "#15161a", "stroke-width": 1 }, g);
+      ringArc(g, c, 14, frac, "#fff", 1.6);
+      if (sc > .9) nameChip(g, c[0], c[1] + 18, name, TEAM[team]);
+    });
+  }
+
+  const DEMOS = [
+  // ---------- 공격 ----------
+  { id: "hitscan", group: "공격", name: "즉발 사격 (히트스캔)", rep: "솔저: 76 펄스 소총", n: 37, ok: true,
+    rule: "쏜 자리에서 맞은 자리까지 직선이 번쩍. 연사는 짧은 선 여러 번.",
+    scene: "솔저가 1.5층에서 겐지에게 펄스 소총을 연사해요. 한 발마다 짧은 선이 번쩍이고 바로 사라져요.",
+    dur: 3.0, still: 1.02, focus: ["soldier", "genji"], place: { genji: { x: 7.4, y: 3.4 } },
+    anim(t, A) { A.get("genji").hp.w[0] = Math.max(34, 112 - shots(t, .4, .09, 14) * 6); },
+    fx(t, A, F) {
+      const p = BP(A.get("soldier")), q = BP(A.get("genji"));
+      for (let i = 0; i < 14; i++) {
+        const t0 = .4 + i * .09, k = 1 - seg(t, t0 + .03, t0 + .16);
+        if (t < t0 || k <= 0) continue;
+        const j = [q[0] + (rnd(i) - .5) * 12, q[1] + (rnd(i + 50) - .5) * 12];
+        tracer(F.top, toward(p, q, 16), j, "ally", k, 3.2);
+        spark(F.top, j, k, TEAM_L.ally, 5);
+      }
+    } },
+
+  { id: "proj", group: "공격", name: "투사체", rep: "한조 폭풍활", n: 88, ok: true,
+    rule: "점이 경로를 따라 날아가며 꼬리를 남김. 포물선은 높이를 반영한 곡선.",
+    scene: "2층의 한조가 라인하르트에게 화살 두 발을 쏴요. 날아가는 시간이 있고, 높이 차이만큼 곡선을 그려요.",
+    dur: 3.2, still: .88, focus: ["hanzo", "rein"],
+    guests: [G("hanzo", "한조", "한조", "enemy", "dmg", 3.9, 2.2, { w: [250, 250] })],
+    anim(t, A) { const r = A.get("rein"); r.hp.a[0] = Math.max(0, 140 - (t > 1.2 ? 55 : 0) - (t > 2.3 ? 55 : 0)); },
+    fx(t, A, F) {
+      const p0 = at3(A.get("hanzo")), r = A.get("rein"), p1 = at3(r);
+      for (const t0 of [.5, 1.6]) {
+        if (t < t0) continue;
+        const u = seg(t, t0, t0 + .7);
+        if (u < 1) bullet(F.top, trailOf(uu => S3(arc3(p0, p1, uu, .5)), u, 9, .028), "enemy", 3.2);
+        else { const k = 1 - seg(t, t0 + .7, t0 + 1.0); if (k > 0) spark(F.top, BP(r), k, TEAM_L.enemy, 9); }
+      }
+    } },
+
+  { id: "beam", group: "공격", name: "광선·분사", rep: "자리야 입자포", n: 13, ok: true,
+    rule: "쏘는 동안 사거리까지 굵은 반투명 띠.",
+    scene: "자리야가 라인하르트에게 입자포를 쏘는 동안 띠가 이어지고, 멈추면 사라져요.",
+    dur: 3.4, still: 1.4, focus: ["zarya", "rein"],
+    guests: [G("zarya", "자리야", "자리야", "enemy", "tank", 6.4, 5.5, { w: [250, 250], s: [225, 225] })],
+    anim(t, A) { A.get("rein").hp.a[0] = Math.max(0, 140 - 55 * Math.max(0, Math.min(t, 2.8) - .5)); },
+    fx(t, A, F) {
+      if (t < .5 || t > 2.95) return;
+      const k = seg(t, .5, .6) * (1 - seg(t, 2.8, 2.95)) * (.85 + .15 * Math.sin(t * 40));
+      const p = BP(A.get("zarya")), q = BP(A.get("rein"));
+      band(F.top, toward(p, q, 13), q, 11, "enemy", k);
+      el("circle", { cx: f1(q[0]), cy: f1(q[1]), r: 7, fill: TEAM_L.enemy, opacity: (.55 * k).toFixed(2), filter: "url(#fGlow)" }, F.top);
+    } },
+
+  { id: "melee", group: "공격", name: "근접·부채꼴", rep: "라인하르트 로켓 해머", n: 19, ok: true,
+    rule: "앞쪽으로 퍼지는 부채꼴이 잠깐.",
+    scene: "라인하르트가 겐지 쪽으로 망치를 두 번 휘둘러요. 휘두르는 방향으로 부채꼴이 쓸고 지나가요.",
+    dur: 2.8, still: .66, focus: ["rein", "genji"], place: { genji: { x: 9.0, y: 7.9 } },
+    anim(t, A) { A.get("genji").hp.w[0] = 112 - (t > .6 ? 50 : 0) - (t > 1.6 ? 50 : 0); },
+    fx(t, A, F) {
+      const r = A.get("rein"), gj = A.get("genji"), dir = angTo(r, gj), h = heightAt(r.x, r.y) + .03;
+      [[.5, 1], [1.5, -1]].forEach(([t0, side]) => {
+        if (t < t0) return;
+        const u = eo(seg(t, t0, t0 + .16)), k = 1 - seg(t, t0 + .2, t0 + .6);
+        if (k <= 0) return;
+        const pts2 = side > 0 ? fanPts(r.x, r.y, h, dir, .9, 1.35, 0, u) : fanPts(r.x, r.y, h, dir, .9, 1.35, 1 - u, 1);
+        el("polygon", { points: pts(pts2), fill: TEAM.ally, "fill-opacity": (.34 * k).toFixed(2), stroke: TEAM_L.ally, "stroke-width": 1.8, opacity: k.toFixed(2), "stroke-linejoin": "round" }, F.ground);
+        const kh = 1 - seg(t, t0 + .1, t0 + .35);
+        if (t > t0 + .1 && kh > 0) spark(F.top, BP(gj), kh, TEAM_L.ally, 9);
+      });
+    } },
+
+  { id: "blast", group: "공격", name: "폭발·범위", rep: "아나 생체 수류탄", n: 70, ok: true,
+    rule: "원 또는 띠 모양 범위가 퍼지며 터짐.",
+    changed: true,
+    scene: "아나가 2층에서 수류탄을 던져 라인하르트 옆에서 터져요. 맞은 적(라인)은 보라 치유 불가 딱지와 보라 체력바 테두리, 아군(겐지)은 노랑 치유 증폭 딱지와 노랑 테두리가 붙어요.",
+    dur: 4.6, still: 1.32, focus: ["ana", "rein", "genji"], place: { genji: { x: 8.6, y: 5.2 } },
+    anim(t, A) {
+      if (t < 1.2) return;
+      const rem = 3 - (t - 1.2);
+      A.get("rein").tags.push({ k: "치유 불가", by: "enemy", T: 3, rem });
+      A.get("genji").tags.push({ k: "치유 증폭", by: "enemy", T: 3, rem });
+      A.get("rein").hp.a[0] = 80;
+      A.get("genji").hp.w[0] = Math.min(250, 112 + 90);
+    },
+    fx(t, A, F) {
+      const land = { x: 9.5, y: 6.1, h: heightAt(9.5, 6.1) + .08 }, p0 = at3(A.get("ana"));
+      if (t >= .4 && t < 1.15) bullet(F.top, trailOf(uu => S3(arc3(p0, land, uu, 1.4)), seg(t, .4, 1.15), 7, .03), "enemy", 3);
+      if (t >= 1.15) {
+        const rr = 1.45 * eo(seg(t, 1.15, 1.35)), k = 1 - seg(t, 1.35, 2.2);
+        if (k > 0) {
+          const cp = circlePts(land.x, land.y, Math.max(.05, rr), null);
+          el("polygon", { points: pts(cp), fill: TEAM.enemy, "fill-opacity": (.34 * k).toFixed(2), stroke: TEAM_L.enemy, "stroke-width": 2.2, opacity: k.toFixed(2) }, F.ground);
+          const kf = 1 - seg(t, 1.15, 1.45);
+          if (kf > 0) el("polygon", { points: pts(circlePts(land.x, land.y, rr * .7, null)), fill: "#fff", "fill-opacity": (.35 * kf).toFixed(2) }, F.ground);
+        }
+      }
+    } },
+
+  // ---------- 연결 ----------
+  { id: "link", group: "연결", name: "연결선", rep: "메르시 카두세우스 지팡이", n: 19, ok: true, changed: true,
+    rule: "두 대상 사이의 선. 이어지는 동안 유지. 선 색은 역할로 정해요 (아래 색표). 설치물과 영웅 사이에도 씀.",
+    ask: "<b>5차에서 바뀜</b>: 연결선 색을 역할마다 나눴어. '다른 예' 6가지를 눌러 보고, 아래 색표에서 인게임과 다른 색이 있으면 알려줘.",
+    palette: LINK_TABLE, varLabel: "다른 예",
+    variants: [
+      { label: "치유 · 메르시", scene: "메르시가 솔저에게 치유 빔을 이어요. 치유는 노란 선이에요. 이어진 동안 선이 남고, 솔저 체력이 차올라요.",
+        dur: 4.2, still: 1.6, focus: ["mercy", "soldier"],
+        anim(t, A) { A.get("soldier").hp.w[0] = Math.min(250, 110 + Math.max(0, Math.min(t, 3.6) - .6) * 55); },
+        fx(t, A, F) { if (t >= .4) linkBeam(F.top, BP(A.get("mercy")), BP(A.get("soldier")), FXC.heal, 1 - seg(t, 3.6, 3.8), eo(seg(t, .4, .6)), t); } },
+      { label: "공격력 증폭 · 메르시", scene: "메르시가 솔저에게 공격력 증폭 빔을 이어요. 파란 선이고, 이어진 동안 솔저에게 공격력 증폭 딱지(2순위)가 붙어요.",
+        dur: 4.2, still: 1.6, focus: ["mercy", "soldier"], place: { mercy: { x: 13.5, y: 1.2, air: 1.2 } },
+        anim(t, A) { if (t >= .6 && t < 3.6) A.get("soldier").tags.push({ k: "공격력 증폭", by: "ally", T: 1, rem: 99, inf: true }); },
+        fx(t, A, F) { if (t >= .4) linkBeam(F.top, BP(A.get("mercy")), BP(A.get("soldier")), FXC.dmg, 1 - seg(t, 3.6, 3.8), eo(seg(t, .4, .6)), t); } },
+      { label: "해킹 · 솜브라", scene: "솜브라가 라인하르트를 해킹해요. 해킹하는 동안 자홍빛 선이 뻗어 가고, 끝나면 선은 사라지고 해킹 딱지(1순위)가 남아요.",
+        dur: 3.6, still: .9, focus: ["sombra", "rein"],
+        guests: [G("sombra", "솜브라", "솜브라", "enemy", "dmg", 9.0, 8.7, { w: [225, 225] })],
+        anim(t, A) { if (t >= 1.05) A.get("rein").tags.push({ k: "해킹", by: "enemy", T: 2, rem: 2 - (t - 1.05) }); },
+        fx(t, A, F) {
+          const s = A.get("sombra"), r = A.get("rein");
+          if (t >= .4 && t < 1.3) linkBeam(F.top, BP(s), BP(r), FXC.hack, (.75 + .25 * Math.sin(t * 30)) * (1 - seg(t, 1.05, 1.3)), seg(t, .4, 1.05), t, { w: 3 });
+          const kf = 1 - seg(t, 1.05, 1.4);
+          if (t >= 1.05 && kf > 0) spark(F.top, BP(r), kf, FXC.hack, 12);
+        } },
+      { label: "연쇄 번개 · 윈스턴", scene: "윈스턴이 충전한 보조 발사로 메르시를 맞히자 번개가 솔저와 파라에게 튀어요. 전기는 하늘색 지그재그 선이에요.",
+        dur: 3.4, still: .72, focus: ["winston", "mercy", "soldier", "pharah"], place: { winston: { x: 6.0, y: 4.9, air: 0 } },
+        fx(t, A, F) {
+          const w = BP(A.get("winston")), m = BP(A.get("mercy")), s = BP(A.get("soldier")), ph = BP(A.get("pharah"));
+          for (const t0 of [.5, 2.0]) {
+            const seed = Math.floor(t * 18);
+            const k1 = seg(t, t0, t0 + .04) * (1 - seg(t, t0 + .3, t0 + .45));
+            zigzag(F.top, toward(w, m, 14), m, FXC.zap, k1, seed);
+            const k2 = seg(t, t0 + .12, t0 + .16) * (1 - seg(t, t0 + .45, t0 + .6));
+            zigzag(F.top, m, s, FXC.zap, k2, seed + 5);
+            zigzag(F.top, m, ph, FXC.zap, k2, seed + 9);
+          }
+        } },
+      { label: "흡수 · 모이라", scene: "모이라가 겐지에게 생체 손아귀(흡수)를 걸어요. 피해를 주며 체력을 빨아들이는 보라 선이고, 알갱이가 겐지에게서 모이라 쪽으로 흘러요.",
+        dur: 3.6, still: 1.5, focus: ["moira", "genji"], place: { genji: { x: 7.2, y: 3.6 } },
+        guests: [G("moira", "모이라", "모이라", "ally", "sup", 9.3, 4.3, { w: [160, 250] })],
+        anim(t, A) { const u = Math.max(0, Math.min(t, 2.9) - .5); A.get("genji").hp.w[0] = Math.max(20, 112 - u * 30); A.get("moira").hp.w[0] = Math.min(250, 160 + u * 30); },
+        fx(t, A, F) { if (t >= .4) linkBeam(F.top, BP(A.get("moira")), BP(A.get("genji")), FXC.drain, 1 - seg(t, 2.9, 3.1), eo(seg(t, .4, .55)), t, { reverse: true, w: 4 }); } },
+      { label: "보호막 배터리 · 시메트라", scene: "시메트라가 자기 순간이동기 10m 안에 있으면 보호막이 차요. 순간이동기와 시메트라 사이에 연하늘 점선이 이어지고, 체력바의 하늘색 칸이 차올라요.",
+        dur: 4.0, still: 1.8, focus: ["sym"],
+        guests: [G("sym", "시메", "시메트라", "ally", "dmg", 11.3, 6.6, { w: [125, 125], s: [20, 150] })],
+        anim(t, A) { A.get("sym").hp.s[0] = Math.min(150, 20 + Math.floor(Math.max(0, t - .5)) * 20); },
+        fx(t, A, F) {
+          const tp = { x: 9.3, y: 4.3 }, h = heightAt(tp.x, tp.y), sy = A.get("sym");
+          F.z(depth(tp.x, tp.y), g => {
+            boxShape(g, tp.x, tp.y, h, .17, .16, "ally");
+            const c = iso(tp.x, tp.y, h + .16);
+            el("circle", { cx: f1(c[0]), cy: f1(c[1]), r: 4, fill: FXC.shield, stroke: "#15161a", "stroke-width": 1 }, g);
+            nameChip(g, c[0], c[1] + 16, "순간이동기");
+          });
+          if (t >= .4) linkBeam(F.top, iso(tp.x, tp.y, h + .2), BP(sy), FXC.shield, 1, eo(seg(t, .4, .6)), t, { dash: "5 5", w: 2.8 });
+        } }
+    ] },
+
+  // ---------- 상태 ----------
+  { id: "status", group: "상태", name: "상태 딱지", rep: "아나 수면총", n: 104, ok: true,
+    rule: "토큰 왼쪽 딱지 + 남은 시간 (쿨타임 딱지는 오른쪽). 딱지 색은 효과 종류: 치유 불가 보라, 치유 증폭 노랑, 공격력 증폭 파랑, 해킹 자홍, 수면 연보라 등. 띄우는 기준은 D-039(1순위 항상, 2순위는 문제에 관련 있으면, 3순위는 해설 때만, 토큰당 최대 2개). 치유 불가·증폭은 체력바 테두리 색도 바뀜. 늘 켜진 오라는 딱지 대신 구역 색.",
+    changed: true,
+    scene: "아나가 라인하르트를 재워요. 라인에게는 먼저 맞은 치유 불가(보라 딱지 + 보라 체력바 테두리)와 공용 치유 감소가 걸려 있고, 윈스턴에게는 개시자 지속 치유가 걸려 있어요. 기준(D-039)대로 3순위인 치유 감소·지속 치유는 숨겨져요.",
+    dur: 5.4, still: 1.8, focus: ["ana", "rein", "winston"], place: { winston: { x: 1.1, y: 6.9, air: 0 } },
+    anim(t, A) {
+      A.get("ana").cd = { name: "수면총", total: 14, rem: t < .5 ? 0 : 14 - (t - .5) };
+      const r = A.get("rein");
+      r.tags.push({ k: "치유 불가", by: "enemy", T: 3, rem: 2.6 - t });
+      r.tags.push({ k: "치유 감소", by: "enemy", T: 3, rem: t < 1.0 ? 1.9 - t : 3 - (t - 1.0) });
+      if (t >= 1.0) r.tags.push({ k: "수면", by: "enemy", T: 5, rem: 5 - (t - 1.0) });
+      A.get("winston").tags.push({ k: "지속 치유", by: "enemy", T: 4, rem: 3.6 - t * .5 });
+    },
+    fx(t, A, F) {
+      const p0 = at3(A.get("ana")), r = A.get("rein"), p1 = at3(r);
+      if (t >= .5 && t < .98) bullet(F.top, trailOf(uu => S3(arc3(p0, p1, uu, .15)), seg(t, .5, .98), 6, .03), "enemy", 2.6);
+      const k = 1 - seg(t, 1.0, 1.35);
+      if (t >= 1.0 && k > 0) spark(F.top, BP(r), k, TEAM_L.enemy, 10);
+    } },
+
+  // ---------- 설치물 ----------
+  { id: "barrier", group: "설치물", name: "방벽", rep: "라인하르트 방벽 방패", n: 16, ok: true,
+    rule: "팀 색 반투명 막 + 체력. 모양은 호·평면·돔·감싸기·통과 면 5가지 (D-031). 통과 면은 색·두께·투명도로 구분.",
+    variants: [
+      { label: "호 · 라인하르트", scene: "라인하르트가 방벽을 들고, 겐지의 표창이 막에 막혀요. 방벽 체력이 줄어들어요.",
+        dur: 3.4, still: 1.25, focus: ["rein", "genji"], place: { genji: { x: 6.6, y: 5.4 } },
+        fx(t, A, F) {
+          const r = A.get("rein"), gj = A.get("genji"), dir = angTo(r, gj);
+          const hf = eo(seg(t, .15, .4)), h0 = heightAt(r.x, r.y) + .02;
+          const xy = arcXY(r.x, r.y, dir, 1.2, .85);
+          let hp = 1;
+          const hits = [];
+          [1.0, 1.7, 2.4].forEach((t0, v) => [-.3, 0, .3].forEach((off, i) => {
+            const ts = t0 + i * .05, u = seg(t, ts, ts + .3);
+            const cp = { x: r.x + Math.cos(dir + off) * .85, y: r.y + Math.sin(dir + off) * .85, h: h0 + .45 };
+            if (t >= ts + .3) { hp -= .03; const k = 1 - seg(t, ts + .3, ts + .55); if (k > 0) hits.push([S3(cp), k]); }
+            else if (t >= ts) bullet(F.top, trailOf(uu => S3(arc3(at3(gj), cp, uu, .05)), u, 4, .05), "enemy", 2.4);
+          }));
+          F.z(depth(r.x + Math.cos(dir) * .85, r.y + Math.sin(dir) * .85), g => {
+            if (hf <= 0) return;
+            const top = wallShape(g, xy, h0, h0 + 1.15 * hf, "ally", { alpha: .34, w: 2.6 });
+            miniBar(g, [top[8][0], top[8][1] - 12], 46, hp, TEAM_L.ally);
+            for (const [p, k] of hits) spark(g, p, k, "#fff", 6);
+          });
+        } },
+      { label: "평면 · 시그마", scene: "시그마가 방벽을 앞으로 날려 보내 자리에 세워요. 날아가는 길은 이동 경로(D-032)로 그려요.",
+        dur: 3.4, still: 1.5, focus: ["sigma"],
+        guests: [G("sigma", "시그마", "시그마", "ally", "tank", 11.9, 8.9, { w: [350, 350], s: [275, 275] })],
+        fx(t, A, F) {
+          const s = A.get("sigma"), tgt = { x: 9.2, y: 7.3 }, dir = angTo(s, tgt);
+          const st = { x: s.x + Math.cos(dir) * .6, y: s.y + Math.sin(dir) * .6 };
+          const u = eo(seg(t, .3, 1.1)), c = { x: lerp(st.x, tgt.x, u), y: lerp(st.y, tgt.y, u) };
+          const px = -Math.sin(dir), py = Math.cos(dir), hw = 1.15, h0 = heightAt(c.x, c.y) + .1;
+          if (t >= .3) {
+            const k = 1 - seg(t, 1.6, 2.4) * .6;
+            const path = []; for (let i = 0; i <= 12; i++) { const x = lerp(st.x, c.x, i / 12), y = lerp(st.y, c.y, i / 12); path.push(iso(x, y, heightAt(x, y) + .03)); }
+            pathArrow(F.ground, path, "ally", k, 2.6);
+          }
+          if (t < .3) return;
+          F.z(depth(c.x, c.y), g => {
+            const xy = []; for (let i = 0; i <= 8; i++) { const o = lerp(-hw, hw, i / 8); xy.push([c.x + px * o, c.y + py * o]); }
+            const top = wallShape(g, xy, h0, h0 + 1.15, "ally");
+            miniBar(g, [top[4][0], top[4][1] - 12], 46, .9, TEAM_L.ally);
+          });
+        } },
+      { label: "돔 · 윈스턴", scene: "윈스턴이 방벽 생성기를 던지면 둥근 막이 펼쳐져요. 안에 있는 영웅은 막 너머로 비쳐 보여요.",
+        dur: 3.2, still: 1.3, focus: ["winston"], place: { winston: { x: 6.2, y: 5.4, air: 0 } },
+        fx(t, A, F) {
+          const w = A.get("winston"), c = { x: w.x + .25, y: w.y + .15 }, h0 = heightAt(c.x, c.y) + .02;
+          const R = 1.25 * eo(seg(t, .5, .85)), Hd = 1.3 * eo(seg(t, .5, .85));
+          if (t < .5) { if (t >= .25) bullet(F.top, [S3(arc3(at3(w), { x: c.x, y: c.y, h: h0 + .1 }, seg(t, .25, .5), .3))], "enemy", 3); return; }
+          F.z(depth(c.x, c.y) + .6, g => {
+            for (let i = 0; i < 6; i++) {
+              const f = i / 6, rr = R * Math.sqrt(1 - f * f);
+              el("polygon", { points: pts(circlePts(c.x, c.y, Math.max(.02, rr), h0 + Hd * f, 40)), fill: TEAM.enemy, "fill-opacity": .06,
+                stroke: TEAM_L.enemy, "stroke-width": i ? .8 : 2, "stroke-opacity": i ? .45 : .95 }, g);
+            }
+            for (let m = 0; m < 6; m++) {
+              const a = m / 6 * Math.PI * 2, mp = [];
+              for (let i = 0; i <= 10; i++) { const f = i / 10, rr = R * Math.cos(f * Math.PI / 2); mp.push(iso(c.x + Math.cos(a) * rr, c.y + Math.sin(a) * rr, h0 + Hd * Math.sin(f * Math.PI / 2))); }
+              el("polyline", { points: pts(mp), fill: "none", stroke: TEAM_L.enemy, "stroke-width": .9, opacity: .5 }, g);
+            }
+            const apex = iso(c.x, c.y, h0 + Hd);
+            miniBar(g, [apex[0], apex[1] - 14], 46, .95, TEAM_L.enemy);
+          });
+        } },
+      { label: "감싸기 · 자리야", scene: "자리야가 자기 몸에 입자 방벽을 둘러요. 영웅을 감싸는 구 모양이에요.",
+        dur: 3.0, still: 1.2, focus: ["zarya"],
+        guests: [G("zarya", "자리야", "자리야", "enemy", "tank", 6.4, 5.5, { w: [250, 250], s: [225, 225] })],
+        fx(t, A, F) {
+          if (t < .4 || t > 2.5) return;
+          const z = A.get("zarya"), k = eo(seg(t, .4, .55)) * (1 - seg(t, 2.35, 2.5));
+          F.z(depth(z.x, z.y) + .01, g => {
+            const c = BP(z);
+            el("circle", { cx: f1(c[0]), cy: f1(c[1]), r: f1(27 * k), fill: TEAM.enemy, "fill-opacity": .22, stroke: TEAM_L.enemy, "stroke-width": 2.2 }, g);
+            el("path", { d: `M${f1(c[0] - 17 * k)},${f1(c[1] - 12 * k)} A${f1(21 * k)},${f1(21 * k)} 0 0 1 ${f1(c[0] + 2 * k)},${f1(c[1] - 21 * k)}`, fill: "none", stroke: "#fff", "stroke-width": 1.6, opacity: .7 }, g);
+            miniBar(g, [c[0], c[1] - 50], 32, 1 - seg(t, .6, 2.4) * .5, TEAM_L.enemy);
+          });
+        } },
+      { label: "통과 면 · 바티스트", scene: "바티스트가 증폭 매트릭스를 세우고 그 사이로 쏴요. 막지 않는 면이라 점선·얇은 선·옅은 색으로 그리고, 통과한 탄은 커져요.",
+        dur: 3.6, still: 1.2, focus: ["baptiste", "genji"], place: { genji: { x: 6.9, y: 6.3 } },
+        guests: [G("baptiste", "바티", "바티스트", "ally", "sup", 11.6, 8.4, { w: [250, 250] })],
+        fx(t, A, F) {
+          const b = A.get("baptiste"), gj = A.get("genji"), dir = angTo(b, gj), dd = Math.hypot(gj.x - b.x, gj.y - b.y);
+          const c = { x: b.x + Math.cos(dir) * 1.6, y: b.y + Math.sin(dir) * 1.6 }, px = -Math.sin(dir), py = Math.cos(dir);
+          const k = seg(t, .3, .45) * (1 - seg(t, 3.3, 3.5)), h0 = heightAt(c.x, c.y) + .05, uc = 1.6 / dd;
+          if (k > 0) F.z(depth(c.x, c.y), g => {
+            const xy = []; for (let i = 0; i <= 8; i++) { const o = lerp(-1.1, 1.1, i / 8); xy.push([c.x + px * o, c.y + py * o]); }
+            g.setAttribute("opacity", k.toFixed(2));
+            wallShape(g, xy, h0, h0 + 1.1, "ally", { fill: AMP, alpha: .1, edge: AMP, w: 1.3, dash: "5 4" });
+            for (let i = 1; i < 8; i += 2) line(g, iso(xy[i][0], xy[i][1], h0 + .1), iso(xy[i][0], xy[i][1], h0 + 1.0), { stroke: AMP, "stroke-width": .8, opacity: .45, "stroke-dasharray": "3 4" });
+          });
+          const p0 = at3(b), p1 = at3(gj);
+          [1.0, 1.2, 1.4, 2.2, 2.4, 2.6].forEach(t0 => {
+            if (t < t0) return;
+            const u = seg(t, t0, t0 + .45);
+            if (u >= 1) { const kk = 1 - seg(t, t0 + .45, t0 + .7); if (kk > 0) spark(F.top, BP(gj), kk, AMP, 8); return; }
+            const amp = u > uc;
+            bullet(F.top, trailOf(uu => S3(arc3(p0, p1, uu, .05)), u, amp ? 6 : 4, .03), "ally", amp ? 4.4 : 2.6, amp ? AMP : null);
+          });
+        } }
+    ] },
+
+  { id: "struct", group: "설치물", name: "부술 수 있는 구조물", rep: "토르비욘 포탑 설치", n: 15, ok: true,
+    rule: "블록·아이콘 + 팀 색 테두리 + 체력.",
+    scene: "토르비욘이 2층 끝에 포탑을 던져 세우고, 포탑이 메르시를 쏴요.",
+    dur: 3.8, still: 1.9, focus: ["torb", "mercy"],
+    guests: [G("torb", "토르", "토르비욘", "enemy", "dmg", 0.6, 2.0, { w: [225, 225], a: [75, 75] })],
+    anim(t, A) { A.get("mercy").hp.w[0] = 225 - shots(t, 1.5, .32, 7) * 12; },
+    fx(t, A, F) {
+      const tb = A.get("torb"), m = A.get("mercy"), pos = { x: 4.5, y: 3.0, h: heightAt(4.5, 3.0) };
+      if (t >= .3 && t < .75) bullet(F.top, trailOf(uu => S3(arc3(at3(tb), { x: pos.x, y: pos.y, h: pos.h + .15 }, uu, .6)), seg(t, .3, .75), 5, .04), "enemy", 3.4);
+      if (t < .75) return;
+      const sc = eo(seg(t, .75, 1.2)), top = pos.h + .4 * sc;
+      F.z(depth(pos.x, pos.y), g => {
+        boxShape(g, pos.x, pos.y, pos.h, .23, .4 * sc, "enemy");
+        const tp = iso(pos.x, pos.y, top), mp = BP(m);
+        line(g, tp, toward(tp, mp, 11 * sc), { stroke: "#1b1c20", "stroke-width": 4, "stroke-linecap": "round" });
+        el("title", {}, g).textContent = "토르비욘 포탑 (적), 부술 수 있는 구조물";
+        if (sc > .5) { miniBar(g, [tp[0], tp[1] - 20], 30, 1, TEAM_L.enemy); fxLabel(g, [tp[0], tp[1] + 30], "포탑", 1, "tag"); }
+      });
+      const tp = iso(pos.x, pos.y, top + .02), mp = BP(m);
+      for (let i = 0; i < 7; i++) {
+        const t0 = 1.5 + i * .32, k = 1 - seg(t, t0 + .03, t0 + .12);
+        if (t < t0 || k <= 0) continue;
+        tracer(F.top, toward(tp, mp, 10), mp, "enemy", k, 2.2);
+        spark(F.top, mp, k, TEAM_L.enemy, 5);
+      }
+    } },
+
+  { id: "temp", group: "설치물", name: "임시 물체", rep: "리퍼 영혼 구슬 / 라이프위버 씨앗", n: 2, ok: true, changed: true,
+    rule: "작은 아이콘 + 팀 색 점선 테두리(체력 없음) + 사라질 때까지 줄어드는 시간 고리 + 물체 이름. 잠깐 생겼다 사라지고, 적이 공격하거나 대상으로 지정할 수 없는 물체. 리퍼 영혼 구슬과 라이프위버 씨앗 두 가지만 이렇게 그리고, 메이 빙하 추진력과 바티스트 자동화 치유는 '표시 안 함'으로 옮겨요.",
+    ask: "<b>5차에서 바뀜</b>: 물체 밑에 이름표를 늘 붙이고, 라이프위버 씨앗을 추가했어. 씨앗을 주우면 체력바에 초록 칸(추가 생명력)이 생겨.",
+    variants: [
+      { label: "영혼 구슬 · 리퍼", scene: "리퍼에게 처치된 루시우 근처에 영혼 구슬이 떨어져요. 리퍼가 주우면 체력이 50 차고 구슬은 사라져요.",
+        dur: 4.2, still: 1.4, focus: ["reaper", "lucio"],
+        guests: [G("reaper", "리퍼", "리퍼", "enemy", "dmg", 9.6, 4.2, { w: [150, 300] })],
+        anim(t, A) {
+          const r = A.get("reaper"), u = eio(seg(t, 1.7, 2.6));
+          r.x = lerp(9.6, 11.3, u); r.y = lerp(4.2, 5.6, u);
+          if (t >= 2.65) r.hp.w[0] = 200;
+        },
+        fx(t, A, F) {
+          const gp = { x: 11.6, y: 5.95 };
+          if (t >= .3 && t < 2.65) tempObj(F, gp, "enemy", 1 - (t - .3) / 6, eo(seg(t, .3, .5)), "orb", "영혼 구슬");
+          const k = 1 - seg(t, 2.65, 2.95);
+          if (t >= 2.65 && k > 0) spark(F.top, iso(gp.x, gp.y, heightAt(gp.x, gp.y) + .3), k, TEAM_L.enemy, 12);
+          const kl = 1 - seg(t, 3.0, 3.6);
+          if (t >= 2.65 && kl > 0) { const rp = BP(A.get("reaper")); fxLabel(F.over, [rp[0] + 26, rp[1] - 36 - 14 * seg(t, 2.65, 3.6)], "+50", kl, "fx-num"); }
+        } },
+      { label: "씨앗 · 라이프위버", scene: "라이프위버가 씨앗을 던져 두면 라인하르트가 걸어가 주워요. 주우면 추가 생명력(체력바 초록 칸)과 이동 속도(3순위라 숨김)를 얻어요.",
+        dur: 4.4, still: 1.4, focus: ["lw", "rein"],
+        guests: [G("lw", "라위", "라이프위버", "ally", "sup", 9.6, 11.3, { w: [225, 225] })],
+        anim(t, A) {
+          const r = A.get("rein"), u = eio(seg(t, 1.6, 2.4));
+          r.x = lerp(10.4, 9.55, u); r.y = lerp(7.0, 9.0, u);
+          if (t >= 2.45) { r.hp.x = [75]; r.tags.push({ k: "속도 증가", by: "ally", T: 3, rem: 3 - (t - 2.45) }); }
+        },
+        fx(t, A, F) {
+          const sp = { x: 9.4, y: 9.2 }, h = heightAt(sp.x, sp.y);
+          if (t >= .35 && t < .75) bullet(F.top, trailOf(uu => S3(arc3(at3(A.get("lw")), { x: sp.x, y: sp.y, h: h + .1 }, uu, .5)), seg(t, .35, .75), 5, .04), "ally", 3);
+          if (t >= .75 && t < 2.45) tempObj(F, sp, "ally", 1 - (t - .75) / 10, eo(seg(t, .75, .95)), "seed", "씨앗");
+          const k = 1 - seg(t, 2.45, 2.75);
+          if (t >= 2.45 && k > 0) spark(F.top, iso(sp.x, sp.y, h + .3), k, FXC.grip, 12);
+          const kl = 1 - seg(t, 2.9, 3.6);
+          if (t >= 2.45 && kl > 0) { const rp = BP(A.get("rein")); fxLabel(F.over, [rp[0] + 44, rp[1] - 30 - 14 * seg(t, 2.45, 3.6)], "추가 생명력", kl); }
+        } }
+    ] },
+
+  { id: "zone", group: "설치물", name: "지속 구역", rep: "솔저: 76 생체장", n: 27, ok: true,
+    rule: "반투명 영역 + 남은 시간. 테두리는 팀 색, 안쪽 색은 효과 종류 (치유는 노랑, 연결선 색표와 같은 색).", changed: true,
+    scene: "솔저가 바로 옆에 생체장을 던져요. 5초 동안 구역이 깔리고, 가운데 고리가 남은 시간을 보여줘요. 솔저 체력이 차올라요.",
+    dur: 6.2, still: 2.2, focus: ["soldier"],
+    anim(t, A) { A.get("soldier").hp.w[0] = Math.min(250, 110 + Math.max(0, Math.min(t, 5.6) - .8) * 45); },
+    fx(t, A, F) {
+      const s = A.get("soldier"), c = { x: 12.1, y: 2.2 }, h = heightAt(c.x, c.y);
+      if (t >= .35 && t < .6) bullet(F.top, trailOf(uu => S3(arc3(at3(s), { x: c.x, y: c.y, h: h + .05 }, uu, .3)), seg(t, .35, .6), 4, .05), "ally", 3);
+      if (t < .6 || t > 5.8) return;
+      const r = 1.25 * eo(seg(t, .6, .8)), k = 1 - seg(t, 5.6, 5.8), rem = Math.max(0, 5 - (t - .6));
+      el("polygon", { points: pts(circlePts(c.x, c.y, Math.max(.05, r), null)), fill: HEAL, "fill-opacity": (.24 * k).toFixed(2), stroke: TEAM.ally, "stroke-width": 2.2, opacity: k.toFixed(2) }, F.ground);
+      const cp = iso(c.x, c.y, h);
+      ringArc(F.ground, cp, 12, rem / 5, "#fff", 2.2, k);
+      fxLabel(F.ground, [cp[0], cp[1] + 4.5], String(Math.ceil(rem)), k, "fx-num");
+    } },
+
+  { id: "summon", group: "설치물", name: "소환체 (움직이는 유닛)", rep: "애쉬 B.O.B.", n: 3, ok: true,
+    rule: "작은 유닛 아이콘(팀 색) + 이동 경로. 영웅 토큰(원)과 헷갈리지 않게 둥근 네모로 그리고 체력을 붙였어요.",
+    scene: "애쉬가 B.O.B.를 불러요. B.O.B.는 계단을 따라 돌진한 뒤 멈춰 서서 솔저를 쏴요.",
+    dur: 4.0, still: 1.4, focus: ["ashe", "bob", "soldier"],
+    guests: [G("ashe", "애쉬", "애쉬", "enemy", "dmg", 0.5, 1.8, { w: [250, 250] })],
+    fx(t, A, F) {
+      const path = [[4.1, 3.5], [5.5, 3.5], [6.9, 3.5], [8.7, 4.3]];
+      if (t < .3) return;
+      const u = eio(seg(t, .6, 1.8)), p = polyAt(path, u), h = heightAt(p[0], p[1]);
+      const ground = []; for (let i = 0; i <= 30; i++) { const q = polyAt(path, i / 30); ground.push(iso(q[0], q[1], heightAt(q[0], q[1]) + .03)); }
+      pathArrow(F.ground, ground, "enemy", t < 1.8 ? 1 : .55, 3.4);
+      const sc = eo(seg(t, .3, .55));
+      F.z(depth(p[0], p[1]), g => {
+        const fl = iso(p[0], p[1], h), c = iso(p[0], p[1], h + .36);
+        el("ellipse", { cx: f1(fl[0]), cy: f1(fl[1]), rx: 13, ry: 5.5, fill: "rgba(0,0,0,.42)" }, g);
+        const b = el("g", { transform: `translate(${f1(c[0])},${f1(c[1])}) scale(${sc.toFixed(2)})` }, g);
+        el("title", {}, b).textContent = "B.O.B. (적 애쉬의 소환체)";
+        el("rect", { x: -12, y: -12, width: 24, height: 24, rx: 6, fill: TEAM.enemy, stroke: "rgba(10,10,12,.9)", "stroke-width": 2.4 }, b);
+        el("use", { href: "#g-bot", x: -8, y: -8, width: 16, height: 16, color: "#fff" }, b);
+        drawHpBar(el("g", { class: "info" }, b), { w: [1000, 1000] }, -27, 30);
+        el("text", { class: "tag", y: 29 }, b).textContent = "B.O.B.";
+      });
+      const bp = iso(p[0], p[1], h + .42), sp = BP(A.get("soldier"));
+      for (let i = 0; i < 8; i++) {
+        const t0 = 2.0 + i * .22, k = 1 - seg(t, t0 + .03, t0 + .1);
+        if (t < t0 || k <= 0) continue;
+        tracer(F.top, toward(bp, sp, 13), sp, "enemy", k, 2.2);
+      }
+    } },
+
+  // ---------- 이동 ----------
+  { id: "move", group: "이동", name: "이동 경로", rep: "윈스턴 점프 팩", n: 45, ok: true,
+    rule: "출발에서 도착까지 화살표. 점프는 높이를 반영한 곡선. 영웅이 아닌 물체(방벽·구역·투사체)의 길에도 씀 (D-032).",
+    scene: "윈스턴이 1층에서 1.5층의 솔저에게 점프해요. 공중 궤적은 곡선, 바닥에는 옅은 그림자 선이 따라가요. 착지하면 개시자 지속 치유(3순위, 평소 숨김)가 붙어요.",
+    dur: 3.8, still: 1.0, focus: ["winston", "soldier"], place: { winston: { x: 5.6, y: 6.2, air: 0 } },
+    anim(t, A) {
+      const w = A.get("winston");
+      const p0 = { x: 5.6, y: 6.2, h: heightAt(5.6, 6.2) + LIFT }, p1 = { x: 9.8, y: 2.8, h: heightAt(9.8, 2.8) + LIFT };
+      setBody(w, arc3(p0, p1, eio(seg(t, .5, 1.5)), 1.4));
+      if (t >= 1.5) w.tags.push({ k: "지속 치유", by: "enemy", T: 3, rem: 3 - (t - 1.5) });
+    },
+    fx(t, A, F) {
+      if (t < .5) return;
+      const p0 = { x: 5.6, y: 6.2, h: heightAt(5.6, 6.2) + LIFT }, p1 = { x: 9.8, y: 2.8, h: heightAt(9.8, 2.8) + LIFT };
+      const u = eio(seg(t, .5, 1.5)), k = 1 - seg(t, 3.0, 3.6);
+      const air = [], gnd = [];
+      for (let i = 0; i <= 28; i++) { const q = arc3(p0, p1, u * i / 28, 1.4); air.push(S3(q)); gnd.push(iso(q.x, q.y, heightAt(q.x, q.y) + .03)); }
+      el("polyline", { points: pts(gnd), fill: "none", stroke: "rgba(0,0,0,.55)", "stroke-width": 2.4, "stroke-dasharray": "2 5", "stroke-linecap": "round", opacity: k.toFixed(2) }, F.ground);
+      if (u >= 1) pathArrow(F.top, air, "enemy", k, 2.8);
+      else el("polyline", { points: pts(air), fill: "none", stroke: TEAM_L.enemy, "stroke-width": 2.8, "stroke-dasharray": "8 6", "stroke-linecap": "round", opacity: .9 }, F.top);
+      const kl = 1 - seg(t, 1.6, 2.1);
+      if (t >= 1.5 && kl > 0) {
+        const rr = .95 * eo(seg(t, 1.5, 1.7));
+        el("polygon", { points: pts(circlePts(p1.x, p1.y, Math.max(.05, rr), null)), fill: TEAM.enemy, "fill-opacity": (.3 * kl).toFixed(2), stroke: TEAM_L.enemy, "stroke-width": 1.8, opacity: kl.toFixed(2) }, F.ground);
+      }
+    } },
+
+  { id: "tele", group: "이동", name: "순간이동·되돌리기", rep: "트레이서 시간 역행", n: 8, ok: true,
+    rule: "출발 자리 옅은 표시 + 도착 자리, 점선으로 연결.",
+    scene: "솔저에게 맞아 체력이 떨어진 트레이서가 시간 역행으로 몇 초 전 자리로 돌아가요. 떠난 자리는 옅은 원으로 남아요.",
+    dur: 3.8, still: 1.7, focus: ["tracer", "soldier"],
+    guests: [G("tracer", "트레", "트레이서", "enemy", "dmg", 9.5, 1.6, { w: [150, 175] })],
+    anim(t, A) {
+      const tr = A.get("tracer");
+      tr.hp.w[0] = t < 1.2 ? Math.max(28, 150 - shots(t, .2, .09, 8) * 16) : 175;
+      if (t >= 1.15) { tr.x = 7.0; tr.y = 2.7; tr.fade = seg(t, 1.15, 1.35); }
+      else tr.fade = 1 - seg(t, 1.0, 1.15);
+    },
+    fx(t, A, F) {
+      const sp = BP(A.get("soldier")), o = { x: 9.5, y: 1.6 }, op = iso(o.x, o.y, heightAt(o.x, o.y) + LIFT);
+      for (let i = 0; i < 8; i++) {
+        const t0 = .2 + i * .09, k = 1 - seg(t, t0 + .02, t0 + .08);
+        if (t < t0 || k <= 0 || t > 1.0) continue;
+        tracer(F.top, toward(sp, op, 16), [op[0] + (rnd(i) - .5) * 10, op[1] + (rnd(i + 9) - .5) * 10], "ally", k, 2.4);
+      }
+      if (t < 1.15) return;
+      const k = 1 - seg(t, 3.0, 3.6), dp = BP(A.get("tracer"));
+      el("circle", { cx: f1(op[0]), cy: f1(op[1]), r: 14.5, fill: TEAM.enemy, "fill-opacity": (.2 * k).toFixed(2), stroke: TEAM_L.enemy, "stroke-width": 2, "stroke-dasharray": "3 3", opacity: k.toFixed(2) }, F.over);
+      const a = toward(op, dp, 16), b = toward(dp, op, 20);
+      line(F.top, a, b, { stroke: "rgba(10,10,12,.7)", "stroke-width": 4.4, "stroke-dasharray": "1 6", "stroke-linecap": "round", opacity: k.toFixed(2) });
+      line(F.top, a, b, { stroke: "#fff", "stroke-width": 2.4, "stroke-dasharray": "1 6", "stroke-linecap": "round", opacity: k.toFixed(2) });
+      arrowHead(F.top, a, b, 8, "#fff", k);
+      const kf = 1 - seg(t, 1.15, 1.5);
+      if (kf > 0) spark(F.top, dp, kf, TEAM_L.enemy, 12);
+    } },
+
+  { id: "push", group: "이동", name: "강제 이동 (밀치기·끌기)", rep: "루시우 소리 파동", n: 39, ok: false, changed: true,
+    rule: "밀치는 범위(부채꼴 등 그 기술의 모양) + 밀려나는 영웅의 움직임 + 화면 문구. 궤적 선과 화살표는 그리지 않아요. 약하게 밀려도 잠깐 보임 (D-029). 문구는 매핑표 R열 종류대로 (밀침·끌어당김·띄움 등, D-036).",
+    scene: "적 루시우가 1.5층 끝에서 솔저를 밀쳐 1층으로 떨어뜨려요. 부채꼴로 밀치는 범위가 보이고, 솔저 토큰이 밀려나며 '밀침' 문구가 잠깐 떠요. (쓰러진 아군 루시우와 헷갈리지 않게 이 장면에서는 시체를 숨겼어요.)",
+    ask: "<b>5차에서 바뀜</b>: 궤적 화살표를 뺐어. 부채꼴 + 밀려나는 움직임 + 문구만으로 읽히는지 봐줘.",
+    dur: 3.6, still: .75, focus: ["lucioE", "soldier"], hide: ["lucio"],
+    guests: [G("lucioE", "루시우", "루시우", "enemy", "sup", 10.0, 2.2, { w: [225, 225] })],
+    anim(t, A) { if (t >= .5) setBody(A.get("soldier"), pushPt(eo(seg(t, .5, 1.1)))); },
+    fx(t, A, F) {
+      const l = A.get("lucioE"), dir = angTo(l, { x: 11.0, y: 2.4 });
+      const kc = 1 - seg(t, .6, 1.0);
+      if (t >= .45 && kc > 0) el("polygon", { points: pts(fanPts(l.x, l.y, heightAt(l.x, l.y) + .04, dir, .6, 1.4, 0, eo(seg(t, .45, .55)))), fill: TEAM.enemy, "fill-opacity": (.34 * kc).toFixed(2), stroke: TEAM_L.enemy, "stroke-width": 1.8, opacity: kc.toFixed(2) }, F.ground);
+      const kl = seg(t, .5, .6) * (1 - seg(t, 1.6, 2.0));
+      if (kl > 0) { const b = BP(A.get("soldier")); fxLabel(F.over, [b[0] + 40, b[1] + 5], "밀침", kl); }
+    } },
+
+  { id: "carry", group: "이동", name: "견인·운반", rep: "라이프위버 구원의 손길", n: 3, ok: false, changed: true,
+    rule: "운반자와 대상 사이 연결선(스킬 색) + 대상이 함께 움직임. 경로 화살표는 그리지 않아요. 끌려가는 동안 무적이면 대상을 스킬 색 막으로 감싸요.",
+    ask: "<b>5차에서 바뀜</b>: 화살표를 뺐어. 구원의 손길은 분홍 연결선 + 끌려가는 동안 분홍 막으로 감쌌고, 제트팩 캣은 파란 연결선이야.",
+    variants: [
+      { label: "끌어오기 · 라이프위버", scene: "지하에 몰린 라인하르트를 라이프위버가 1층으로 끌어와요. 분홍 연결선이 이어지고, 끌려가는 동안 라인은 분홍 막에 싸여 무적이에요.",
+        dur: 3.4, still: 1.2, focus: ["lw", "rein"], place: { rein: { x: 6.7, y: 9.3, hp: { w: [120, 350], a: [0, 300] } } },
+        guests: [G("lw", "라위", "라이프위버", "ally", "sup", 11.4, 9.6, { w: [225, 225] })],
+        anim(t, A) {
+          const r = A.get("rein");
+          if (t >= .8) setBody(r, gripPt(eio(seg(t, .8, 1.6))));
+          const bk = eo(seg(t, .7, .85)) * (1 - seg(t, 1.65, 1.9));
+          if (bk > 0) r.bubble = { c: FXC.grip, k: bk };
+        },
+        fx(t, A, F) {
+          if (t < .4) return;
+          linkBeam(F.top, BP(A.get("lw")), BP(A.get("rein")), FXC.grip, 1 - seg(t, 1.6, 1.9), eo(seg(t, .4, .6)), t, { w: 4, reverse: true });
+        } },
+      { label: "함께 이동 · 제트팩 캣", scene: "제트팩 캣이 겐지를 낚아채 기절시킨 채로 아군 쪽으로 끌고 가요. 둘이 파란 연결선으로 묶여 함께 움직여요.",
+        dur: 3.8, still: 1.55, focus: ["cat", "genji"], place: { genji: { x: 9.3, y: 6.6 } },
+        guests: [G("cat", "캣", "제트팩 캣", "ally", "sup", 11.2, 6.2, { w: [225, 225] }, { air: 1.6 })],
+        anim(t, A) {
+          const c = A.get("cat"), g = A.get("genji");
+          if (t < .7) { const u = eio(seg(t, .3, .7)); setBody(c, { x: lerp(11.2, 9.3, u), y: lerp(6.2, 6.6, u), h: heightAt(9.3, 6.6) + lerp(1.6, 1.45, u) }); return; }
+          const u = eio(seg(t, .8, 2.4)), q = catPt(u);
+          if (t < 2.4) { setBody(g, q); setBody(c, { x: q.x, y: q.y, h: q.h + 1.15 }); }
+          else { const f = eo(seg(t, 2.4, 2.6)); setBody(g, { x: q.x, y: q.y, h: lerp(q.h, heightAt(q.x, q.y) + LIFT, f) }); setBody(c, { x: q.x, y: q.y, h: q.h + 1.15 + .3 * f }); }
+          if (t < 2.9) g.tags.push({ k: "기절", by: "ally", T: 2.2, rem: 2.9 - t });
+        },
+        fx(t, A, F) {
+          if (t >= .7 && t < 2.5) linkBeam(F.top, BP(A.get("cat")), BP(A.get("genji")), FXC.tether, 1 - seg(t, 2.4, 2.5), 1, t, { w: 3.6 });
+        } }
+    ] },
+
+  // ---------- 방어 ----------
+  { id: "absorb", group: "방어", name: "투사체 흡수·반사", rep: "D.Va 방어 매트릭스", n: 6, ok: true,
+    rule: "시전자 앞에 얇은 팀 색 호. 흡수는 투사체가 빨려 들어가고, 반사는 되튕겨 나감. 방벽과 달리 체력이 없어요.",
+    variants: [
+      { label: "흡수 · D.Va", scene: "파라가 쏜 로켓이 D.Va의 방어 매트릭스에 닿자마자 빨려 들어가 사라져요.",
+        dur: 2.8, still: .86, focus: ["dva", "pharah"],
+        guests: [G("dva", "D.Va", "D.Va", "enemy", "tank", 3.2, 8.4, { w: [350, 350], a: [325, 325] })],
+        fx(t, A, F) { matrixFx(t, A, F, "dva", false); } },
+      { label: "반사 · 겐지", scene: "파라가 쏜 로켓을 겐지가 튕겨내요. 로켓이 적 색으로 바뀌어 파라에게 되돌아가요.",
+        dur: 2.8, still: 1.18, focus: ["genji", "pharah"], place: { genji: { x: 3.2, y: 8.4 } },
+        anim(t, A) { A.get("pharah").hp.w[0] = 205 - (t > 1.3 ? 60 : 0) - (t > 1.75 ? 60 : 0); },
+        fx(t, A, F) { matrixFx(t, A, F, "genji", true); } }
+    ] },
+
+  { id: "block", group: "방어", name: "막기 (전방 피해 감소)", rep: "둠피스트 파워 블락", n: 4, ok: true,
+    rule: "토큰 앞에 붙은 짧고 두꺼운 방패 호. 방벽보다 작고 체력 없음.",
+    scene: "둠피스트가 솔저 쪽으로 팔을 들어 막아요. 총알이 앞쪽 호에 부딪혀 튀어요.",
+    dur: 3.0, still: 1.0, focus: ["doom", "soldier"],
+    guests: [G("doom", "둠피", "둠피스트", "enemy", "tank", 7.4, 3.2, { w: [450, 525] })],
+    fx(t, A, F) {
+      const d = A.get("doom"), s = A.get("soldier"), dir = angTo(d, s);
+      if (t < .3 || t > 2.6) return;
+      const k = seg(t, .3, .42) * (1 - seg(t, 2.45, 2.6)), bh = bodyH(d) - .02;
+      const sp = arcXY(d.x, d.y, dir, 1.05, .5, 12).map(p => iso(p[0], p[1], bh));
+      F.z(depth(d.x + Math.cos(dir) * .5, d.y + Math.sin(dir) * .5), g => {
+        el("polyline", { points: pts(sp), fill: "none", stroke: "rgba(10,10,12,.88)", "stroke-width": 10, "stroke-linecap": "round", opacity: k.toFixed(2) }, g);
+        el("polyline", { points: pts(sp), fill: "none", stroke: TEAM.enemy, "stroke-width": 7, "stroke-linecap": "round", opacity: k.toFixed(2) }, g);
+        el("polyline", { points: pts(sp), fill: "none", stroke: "#fff", "stroke-width": 1.6, "stroke-linecap": "round", opacity: (.9 * k).toFixed(2) }, g);
+      });
+      const pp = BP(s);
+      for (let i = 0; i < 18; i++) {
+        const t0 = .45 + i * .1, kk = 1 - seg(t, t0 + .03, t0 + .15);
+        if (t < t0 || kk <= 0) continue;
+        const hp = sp[3 + Math.floor(rnd(i) * 7)];
+        tracer(F.top, toward(pp, hp, 16), hp, "ally", kk, 3);
+        spark(F.top, hp, kk, "#fff", 5);
+      }
+    } },
+
+  // ---------- 자기 상태 ----------
+  { id: "mode", group: "자기 상태", name: "영웅 자신의 모드", rep: "리퍼 망령화 / 위도우메이커 저격", n: 51, ok: true,
+    rule: "토큰 테두리 모양 변화. 저격 모드는 토큰 원 안의 연한 스코프 (D-028). 저지 불가는 모드가 아니라 딱지.",
+    variants: [
+      { label: "망령화 · 리퍼", scene: "리퍼가 망령화로 빠르게 지나가요. 토큰 테두리가 일렁이는 선으로 바뀌고, 가려진 영웅(점선 고리)과는 모양이 달라요.",
+        dur: 3.2, still: 1.4, focus: ["reaperW"],
+        guests: [G("reaperW", "리퍼", "리퍼", "enemy", "dmg", 6.2, 4.6, { w: [300, 300] })],
+        anim(t, A) {
+          const r = A.get("reaperW"), u = eio(seg(t, .7, 2.1));
+          r.x = lerp(6.2, 9.6, u); r.y = lerp(4.6, 4.8, u);
+          if (t >= .4 && t < 2.4) { r.mode = "wraith"; r.modeLabel = "망령화"; }
+        } },
+      { label: "저격 · 위도우메이커", scene: "2층의 위도우메이커가 저격 조준을 하면 토큰 안에 스코프가 생겨요. 이어서 솔저를 쏴요. (이 장면에서는 쓰러진 위도우 자리를 숨겼어요.)",
+        dur: 3.2, still: 1.6, focus: ["widowA", "soldier"], hide: ["widow"],
+        guests: [G("widowA", "위도우", "위도우메이커", "enemy", "dmg", 3.4, 2.0, { w: [200, 200] })],
+        anim(t, A) {
+          const w = A.get("widowA");
+          if (t >= .4) { w.mode = "scope"; w.modeLabel = "저격"; }
+          if (t >= 2.2) A.get("soldier").hp.w[0] = 58;
+        },
+        fx(t, A, F) {
+          const k = 1 - seg(t, 2.25, 2.45);
+          if (t < 2.2 || k <= 0) return;
+          const p = BP(A.get("widowA")), q = BP(A.get("soldier"));
+          tracer(F.top, toward(p, q, 16), q, "enemy", k, 3.6);
+          spark(F.top, q, k, TEAM_L.enemy, 10);
+        } }
+    ] },
+
+  // ---------- 정보 ----------
+  { id: "detect", group: "정보", name: "탐지·노출", rep: "한조 음파 화살 / 위도우메이커 적외선 투시", n: 4, ok: false, changed: true,
+    rule: "두 가지로 나눠 그려요. 구역 탐지(한조 음파 화살): 원형 파동 + 드러난 토큰에 탐지한 팀 색 윤곽이 깜빡임. 전체 노출(위도우메이커 적외선 투시, 수색가 등): 드러난 적이 벽 너머에서도 붉은 실루엣으로 보임.",
+    ask: "<b>5차에서 바뀜</b>: 위도우 적외선 투시를 따로 그렸어. 가려진 적은 온통 붉은 실루엣, 보이는 적은 붉은 윤곽이야. 음파 화살(파란 깜빡임)과 구분되는지 봐줘.",
+    variants: [
+      { label: "구역 탐지 · 한조 음파 화살", scene: "아군 한조가 지하에 음파 화살을 쏴요. 파동 안의 겐지·키리코가 지형에 가려져 있어도 파란 윤곽으로 또렷하게 보여요.",
+        dur: 4.4, still: 1.9, focus: ["hanzoA", "kiriko", "genji"], place: { genji: { x: 6.6, y: 9.8 } },
+        guests: [G("hanzoA", "한조", "한조", "ally", "dmg", 10.0, 1.2, { w: [250, 250] })],
+        anim(t, A) { if (t >= 1.15) { A.get("kiriko").revealed = "ally"; A.get("genji").revealed = "ally"; } },
+        fx(t, A, F) {
+          const land = { x: 7.9, y: 9.4, h: heightAt(7.9, 9.4) + .05 }, p0 = at3(A.get("hanzoA"));
+          if (t >= .4 && t < 1.1) bullet(F.top, trailOf(uu => S3(arc3(p0, land, uu, .7)), seg(t, .4, 1.1), 8, .03), "ally", 3);
+          if (t < 1.1) return;
+          const lp = S3(land);
+          el("polygon", { points: pts(circlePts(land.x, land.y, 2.3, null, 60)), fill: "none", stroke: TEAM_L.ally, "stroke-width": 1.4, "stroke-dasharray": "4 5", opacity: .7 }, F.ground);
+          for (let j = 0; j < 4; j++) {
+            const t0 = 1.1 + j * .8, u = seg(t, t0, t0 + .9);
+            if (t < t0 || u >= 1) continue;
+            el("polygon", { points: pts(circlePts(land.x, land.y, Math.max(.05, 2.3 * eo(u)), null, 60)), fill: TEAM.ally, "fill-opacity": (.12 * (1 - u)).toFixed(2), stroke: TEAM_L.ally, "stroke-width": 2.2, opacity: (1 - u).toFixed(2) }, F.ground);
+          }
+          line(F.top, [lp[0] - 6, lp[1] - 9], lp, { stroke: "#fff", "stroke-width": 2.4, "stroke-linecap": "round" });
+          el("circle", { cx: f1(lp[0]), cy: f1(lp[1]), r: 3, fill: TEAM.ally, stroke: "#fff", "stroke-width": 1.2 }, F.top);
+        } },
+      { label: "전체 노출 · 위도우 적외선 투시", scene: "아군 위도우메이커가 궁극기(적외선 투시)를 쓰면 적 전원이 붉게 드러나요. 지하에 가려진 키리코도 반투명이 아니라 붉은 실루엣으로 보여요. (쓰러진 적 위도우 자리는 이 장면에서 숨겼어요.)",
+        dur: 4.0, still: 1.6, focus: ["widowU", "winston", "genji", "ana", "kiriko"], hide: ["widow"],
+        guests: [G("widowU", "위도우", "위도우메이커", "ally", "dmg", 10.0, 1.2, { w: [200, 200] }, { ult: 1 })],
+        anim(t, A) {
+          if (t >= .5) A.get("widowU").ult = 0;
+          const s = eo(seg(t, .55, .85));
+          if (s > 0) for (const id of ["winston", "genji", "ana", "kiriko"]) A.get(id).silhouette = s;
+        },
+        fx(t, A, F) {
+          const k = seg(t, .5, .6);
+          if (k > 0) { const w = BP(A.get("widowU")); fxLabel(F.over, [w[0], w[1] - 46], "적외선 투시", k, "fx-ult"); }
+        } }
+    ] },
+
+  // ---------- 기타 ----------
+  { id: "revive", group: "기타", name: "부활", rep: "메르시 부활", n: 2, ok: true,
+    rule: "꺼진 아이콘이 다시 밝아지며 빛기둥 + 시전 게이지.",
+    scene: "메르시가 쓰러진 루시우 곁으로 가서 부활을 시전해요. 게이지가 차는 동안 빛기둥이 서고, 끝나면 루시우가 되살아나요. 위쪽 초상화 줄도 함께 바뀌어요.",
+    dur: 4.6, still: 2.0, focus: ["mercy", "lucio"],
+    anim(t, A) {
+      const m = A.get("mercy"), u = eio(seg(t, .3, 1.0));
+      setBody(m, { x: lerp(7.8, 11.2, u), y: lerp(4.4, 5.4, u), h: lerp(heightAt(7.8, 4.4) + 1.5, heightAt(11.2, 5.4) + LIFT, u) });
+      if (t >= 2.75) Object.assign(A.get("lucio"), { kind: "hero", hp: { w: [225, 225] }, ult: .3, air: 0, tags: [] });
+    },
+    fx(t, A, F) {
+      const l = A.get("lucio"), c = iso(l.x, l.y, heightAt(l.x, l.y));
+      if (t >= 1.0 && t < 2.75) {
+        const u = seg(t, 1.0, 2.75), gr = eo(seg(t, 1.0, 1.35));
+        F.z(depth(l.x, l.y) + .02, g => {
+          el("rect", { x: f1(c[0] - 15), y: f1(c[1] - 8 - 100 * gr), width: 30, height: f1(100 * gr), fill: "url(#pillar)", stroke: "#fff3c4", "stroke-width": 1.2, "stroke-opacity": .9, opacity: (.55 + .45 * u).toFixed(2) }, g);
+          el("rect", { x: f1(c[0] - 4), y: f1(c[1] - 8 - 100 * gr), width: 8, height: f1(100 * gr), fill: "#fff", opacity: (.35 + .4 * u).toFixed(2) }, g);
+          el("ellipse", { cx: f1(c[0]), cy: f1(c[1] - 4), rx: 20, ry: 9, fill: "none", stroke: "#fff3c4", "stroke-width": 1.4, opacity: .8 }, g);
+        });
+        ringArc(F.over, [c[0], c[1] - 5], 22, u, TEAM_L.ally, 3.2);
+        fxLabel(F.over, [c[0], c[1] - 34], "부활 " + Math.round(u * 100) + "%", 1, "fx-num");
+      }
+      const k = 1 - seg(t, 2.75, 3.3);
+      if (t >= 2.75 && k > 0) {
+        const b = BP(l);
+        el("circle", { cx: f1(b[0]), cy: f1(b[1]), r: f1(18 + 26 * (1 - k)), fill: "none", stroke: "#fff3c4", "stroke-width": 3, opacity: k.toFixed(2) }, F.top);
+        el("rect", { x: f1(c[0] - 13), y: f1(c[1] - 104), width: 26, height: 96, fill: "url(#pillar)", opacity: (.9 * k).toFixed(2) }, F.top);
+      }
+    } },
+
+  // ---------- 화면 요소 ----------
+  { id: "hp4", group: "화면 요소", name: "체력 4색", rep: "D-030", n: null, ok: true, extra: true, changed: true,
+    rule: "흰색 기본 생명력, 주황 방어구, 하늘색 보호막, 초록 추가 생명력. 토큰과 HUD 체력바에 똑같이. 추가 생명력은 딱지 없이 초록 칸으로만. 치유 불가일 때는 체력바 테두리가 보라, 치유 증폭일 때는 노랑.",
+    scene: "라인·윈스턴은 방어구(주황), 젠야타는 보호막(하늘색), 솔저는 추가 생명력(초록)을 받은 상태예요. 라인은 치유 불가(보라 테두리), 겐지는 치유 증폭(노랑 테두리)이 걸려 있어요. 아래에서 HUD 체력바 예시를 바꿔 볼 수 있어요.",
+    ask: "<b>5차에서 바뀜</b>: 치유 불가·증폭일 때 체력바 테두리 색이 바뀌어. 보드 토큰과 HUD 예시(치유 불가·치유 증폭)에서 봐줘.",
+    dur: 4, still: 0, focus: "all",
+    guests: [G("zen", "젠야타", "젠야타", "enemy", "sup", 0.4, 2.2, { w: [75, 75], s: [110, 175] })],
+    anim(t, A) {
+      A.get("soldier").hp = { w: [250, 250], x: [60] };
+      A.get("rein").tags.push({ k: "치유 불가", by: "enemy", T: 3, rem: 3 - t * .5 });
+      A.get("genji").tags.push({ k: "치유 증폭", by: "enemy", T: 3, rem: 3 - t * .5 });
+    },
+    varLabel: "HUD 체력바 예시",
+    variants: [
+      { label: "솔저 + 추가 생명력", hud: { name: "솔저: 76", role: "dmg", hp: { w: [250, 250], x: [60] } } },
+      { label: "라인하르트 (방어구)", hud: { name: "라인하르트", role: "tank", hp: { w: [350, 350], a: [140, 300] } } },
+      { label: "젠야타 (보호막)", hud: { name: "젠야타", role: "sup", hp: { w: [75, 75], s: [110, 175] } } },
+      { label: "솔저 (기본만)", hud: { name: "솔저: 76", role: "dmg", hp: { w: [178, 250] } } },
+      { label: "솔저 + 치유 불가", hud: { name: "솔저: 76", role: "dmg", hp: { w: [178, 250] }, ring: "anti" } },
+      { label: "솔저 + 치유 증폭", hud: { name: "솔저: 76", role: "dmg", hp: { w: [178, 250] }, ring: "amp" } }
+    ] },
+
+  { id: "kfeed", group: "화면 요소", name: "킬로그 치명타 색", rep: "D-035", n: null, ok: true, extra: true, kf: true, changed: true,
+    rule: "킬로그 모양은 그대로 두고 가운데 두꺼운 화살표 색만 바꿔요. 일반 킬은 흰 화살표, 치명타 킬은 붉은 화살표.",
+    scene: "오른쪽 위 킬로그에서 위의 줄(솔저 → 위도우메이커)은 일반 킬이라 흰 화살표, 아래 줄(위도우메이커 → 루시우)은 헤드샷이라 붉은 화살표예요.",
+    ask: "<b>5차에서 바뀜</b>: 해골·테두리·붉은 배경을 빼고, 무기 아이콘 대신 두꺼운 화살표 하나로 바꿨어. 색만 달라.",
+    dur: 4, still: 0, focus: "all" }
+  ];
+
+  // ----- 장면에서 같이 쓰는 궤적 -----
+  function pushPt(u) {                       // 루시우에게 밀린 솔저: 1.5층 끝을 넘어 1층으로 떨어짐
+    const x = lerp(11.0, 13.4, u), y = lerp(2.4, 2.55, u);
+    const h = Math.max(heightAt(x, y), .5 + .28 * Math.sin(Math.PI * Math.min(1, u / .75)) - .9 * Math.pow(Math.max(0, (u - .55) / .45), 2));
+    return { x, y, h: h + LIFT };
+  }
+  function gripPt(u) {                       // 구원의 손길: 지하에서 1층으로 끌려 올라옴
+    return arc3({ x: 6.7, y: 9.3, h: heightAt(6.7, 9.3) + LIFT }, { x: 10.8, y: 9.5, h: heightAt(10.8, 9.5) + LIFT }, u, .9);
+  }
+  function catPt(u) {                        // 납치한다냥: 낚아챈 겐지를 들고 날아감
+    return arc3({ x: 9.3, y: 6.6, h: heightAt(9.3, 6.6) + .9 }, { x: 11.0, y: 10.4, h: heightAt(11.0, 10.4) + 1.0 }, u, .5);
+  }
+  function matrixFx(t, A, F, who, reflect) {
+    const d = A.get(who), ph = A.get("pharah"), dir = angTo(d, ph), bh = heightAt(d.x, d.y);
+    const k = seg(t, .3, .42) * (1 - seg(t, 2.3, 2.5));
+    if (k > 0) {
+      const xy = arcXY(d.x, d.y, dir, .95, .62, 12);
+      F.z(depth(d.x + Math.cos(dir) * .62, d.y + Math.sin(dir) * .62), g => {
+        g.setAttribute("opacity", k.toFixed(2));
+        if (reflect) {
+          wallShape(g, xy, bh + .15, bh + .85, "enemy", { alpha: .1, edge: "#fff", w: 2.4 });
+        } else {
+          wallShape(g, xy, bh + .2, bh + .9, "enemy", { alpha: .16, w: 1.2 });
+          for (let i = 2; i < xy.length - 1; i += 2) line(g, iso(xy[i][0], xy[i][1], bh + .2), iso(xy[i][0], xy[i][1], bh + .9), { stroke: TEAM_L.enemy, "stroke-width": .8, opacity: .6 });
+        }
+      });
+    }
+    const p0 = at3(ph);
+    [.5, .95, 1.4].forEach((t0, i) => {
+      if (t < t0) return;
+      const off = (i - 1) * .35, cp = { x: d.x + Math.cos(dir + off) * .62, y: d.y + Math.sin(dir + off) * .62, h: bh + .55 };
+      const u = seg(t, t0, t0 + .42);
+      if (u < 1) { bullet(F.top, trailOf(uu => S3(arc3(p0, cp, uu, 0)), u, 7, .035), "ally", 3.4); return; }
+      if (!reflect) {
+        const kk = 1 - seg(t, t0 + .42, t0 + .6);
+        if (kk > 0) {
+          const c = S3(cp), bc = BP(d), q = lerp2(c, bc, 1 - kk);
+          el("circle", { cx: f1(q[0]), cy: f1(q[1]), r: f1(3.4 * kk + .5), fill: "#fff", stroke: TEAM.ally, "stroke-width": 1.4, opacity: kk.toFixed(2) }, F.top);
+          el("circle", { cx: f1(c[0]), cy: f1(c[1]), r: f1(9 * kk), fill: "none", stroke: TEAM_L.enemy, "stroke-width": 1.6, opacity: kk.toFixed(2) }, F.top);
+        }
+        return;
+      }
+      const u2 = seg(t, t0 + .42, t0 + .84);
+      if (u2 < 1) bullet(F.top, trailOf(uu => S3(arc3(cp, at3(ph), uu, 0)), u2, 7, .035), "enemy", 3.4);
+      else { const kk = 1 - seg(t, t0 + .84, t0 + 1.1); if (kk > 0) spark(F.top, BP(ph), kk, TEAM_L.enemy, 9); }
+      const kf = 1 - seg(t, t0 + .42, t0 + .6);
+      if (kf > 0) spark(F.top, S3(cp), kf, "#fff", 8);
+    });
+  }
+
+  // ================= 지형 그리기 (회전할 때만 다시) =================
+  const board = document.getElementById("board");
+  const LY = {};
+  for (const k of ["terrain", "maplabels", "fxGround", "shadows", "zlayer", "fxTop", "fxOver"]) LY[k] = document.getElementById(k);
+
+  function renderTerrain() {
+    const terrain = LY.terrain;
+    terrain.replaceChildren();
+    const order = [];
+    for (let gy = 0; gy < D; gy++) for (let gx = 0; gx < W; gx++) order.push([gx, gy, depth(gx + .5, gy + .5)]);
+    order.sort((a, b) => a[2] - b[2]);
+    const decorAfter = new Map();
+    for (const d of DECOR) {
+      let best = null, bd = -1e9;
+      for (const [gx, gy] of d.tiles) { const dp = depth(gx + .5, gy + .5); if (dp > bd) { bd = dp; best = gx + "," + gy; } }
+      if (!decorAfter.has(best)) decorAfter.set(best, []);
+      decorAfter.get(best).push(d);
+    }
+    for (const [gx, gy] of order) {
+      const g = el("g", {}, terrain);
+      drawTile(g, gx, gy);
+      for (const d of decorAfter.get(gx + "," + gy) || []) d.draw(el("g", {}, terrain));
+    }
+    const labels = LY.maplabels;
+    labels.replaceChildren();
+    for (const Lb of LABELS) {
+      const p = iso(Lb.x, Lb.y, Lb.h);
+      el("text", { class: "maplabel", x: f1(p[0]), y: f1(p[1]) }, labels).textContent = Lb.t;
+    }
+    const pp = iso(POINT.x, POINT.y, heightAt(POINT.x, POINT.y));
+    el("text", { class: "maplabel", x: f1(pp[0]), y: f1(pp[1] + 4) }, labels).textContent = POINT.label;
+    drawCompass();
+  }
+
+  // ================= 장면 상태 =================
+  let cur = 0, varIdx = 0, tNow = 0;
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let playing = !reduce;
+  const specOf = () => { const Dm = DEMOS[cur]; return Dm.variants ? Object.assign({}, Dm, Dm.variants[varIdx]) : Dm; };
+
+  function buildCast(spec, t) {
+    const A = new Map();
+    const hero = b => Object.assign({}, b, { hp: cloneHp(b.hp), tags: [], kind: "hero", air: b.air || 0 });
+    for (const b of BASE) { const a = hero(b); a.cd = CD_STATE[b.id] || null; A.set(b.id, a); }
+    for (const c of BASE_CORPSES) A.set(c.id, Object.assign({}, c, { kind: "corpse", tags: [] }));
+    A.set("payload", { id: "payload", kind: "payload", x: PAYLOAD.x, y: PAYLOAD.y, tags: [] });
+    for (const g of spec.guests || []) A.set(g.id, hero(g));
+    for (const id in spec.place || {}) { const a = A.get(id), p = spec.place[id]; Object.assign(a, p); if (p.hp) a.hp = cloneHp(p.hp); }
+    for (const id of spec.hide || []) A.get(id).gone = true;
+    if (spec.focus !== "all") for (const a of A.values()) a.dim = !spec.focus.includes(a.id);
+    if (spec.anim) spec.anim(t, A);
+    return A;
+  }
+
+  // ================= 매 프레임 그리기 =================
+  const killfeed = document.getElementById("killfeed");
+  function drawDynamic() {
+    for (const k of ["fxGround", "shadows", "zlayer", "fxTop", "fxOver"]) LY[k].replaceChildren();
+    const spec = specOf();
+    const A = buildCast(spec, tNow);
+    const Z = [];
+    const F = { ground: LY.fxGround, top: LY.fxTop, over: LY.fxOver, z: (d, fn) => Z.push({ d, fn }) };
+    if (spec.fx) spec.fx(tNow, A, F);
+    const now = performance.now() / 1000;
+    for (const a of A.values()) {
+      if (a.gone) continue;
+      Z.push(a.kind === "corpse" ? corpseItem(a, LY.shadows) : a.kind === "payload" ? payloadItem(a, LY.shadows) : heroItem(a, LY.shadows, now));
+    }
+    Z.sort((p, q) => p.d - q.d);
+    for (const it of Z) it.fn(LY.zlayer);
+    killfeed.classList.toggle("focus", !!spec.kf);
+    document.getElementById("ptLucio").classList.toggle("dead", A.get("lucio").kind === "corpse");
+    const sd = A.get("soldier");
+    if (spec.hud) setHud(spec.hud.name, spec.hud.role, spec.hud.hp, spec.hud.ring);
+    else setHud("솔저: 76", "dmg", sd.hp, hpRing(sd.tags) === FXC.anti ? "anti" : hpRing(sd.tags) === FXC.heal ? "amp" : "");
+    document.getElementById("prog").style.width = (clamp01(tNow / spec.dur) * 100).toFixed(1) + "%";
+  }
+  function redraw() { drawDynamic(); }
+
+  // ================= HUD =================
+  const segsEl = document.getElementById("segs");
+  let hudSig = "";
+  function setHud(name, role, hp, ring) {
+    const sig = name + JSON.stringify(hp) + (ring || "");
+    if (sig === hudSig) return;
+    hudSig = sig;
+    segsEl.classList.toggle("anti", ring === "anti");
+    segsEl.classList.toggle("amp", ring === "amp");
+    document.getElementById("meName").textContent = name;
+    document.getElementById("mePic").firstElementChild.setAttribute("href", "#g-" + role);
+    const [c, m] = hpSum(hp);
+    document.getElementById("meHp").textContent = Math.round(c);
+    document.getElementById("meMax").textContent = "/ " + m;
+    segsEl.replaceChildren();
+    const per = m > 400 ? 50 : 25;
+    const add = (k, f) => { const s = document.createElement("span"); s.className = "seg " + k; const i = document.createElement("i"); i.style.width = (clamp01(f) * 100) + "%"; s.appendChild(i); segsEl.appendChild(s); };
+    for (const k of ["w", "a", "s"]) if (hp[k]) { const n = Math.max(1, Math.round(hp[k][1] / per)); for (let i = 0; i < n; i++) add(k, (hp[k][0] - i * per) / per); }
+    if (hp.x && hp.x[0] > 0) { const n = Math.ceil(hp.x[0] / per); for (let i = 0; i < n; i++) add("x", (hp.x[0] - i * per) / per); }
+  }
+  const abEls = {};
+  document.querySelectorAll(".ab[data-cd]").forEach(a => abEls[a.dataset.cd] = a);
+  function updateHudCd() {
+    for (const k in HUD_CD) {
+      const v = HUD_CD[k], a = abEls[k], f = v.total ? v.rem / v.total : 0;
+      a.style.setProperty("--cd", f.toFixed(3));
+      a.classList.toggle("cd", v.rem > 0);
+      a.querySelector("em").textContent = v.rem > 0 ? Math.ceil(v.rem) : "";
+    }
+  }
+  // 쿨타임 흐름: 0이 되면 잠깐 준비 상태로 두었다가 다시 사용한 것처럼 채운다 (재생 중에만)
+  function tickCd(dt) {
+    const list = Object.entries(HUD_CD).filter(([, v]) => v.total).map(([k, v]) => ({ k, v })).concat(Object.values(CD_STATE).map(v => ({ v })));
+    for (const { k, v } of list) {
+      if (v.rem > 0) {
+        v.rem = Math.max(0, v.rem - dt);
+        if (v.rem === 0) { v.wait = 2.5; if (k && abEls[k]) { abEls[k].classList.add("flash"); setTimeout(() => abEls[k].classList.remove("flash"), 400); } }
+      } else if (v.wait !== undefined) {
+        v.wait -= dt;
+        if (v.wait <= 0) { v.rem = v.total; v.wait = undefined; }
+      }
+    }
+    updateHudCd();
+  }
+
+  // ================= 재생 =================
+  let raf = 0, last = 0;
+  const bPlay = document.getElementById("bPlay");
+  function loop(now) {
+    const dt = last ? Math.min(.05, (now - last) / 1000) : 0;
+    last = now;
+    const spec = specOf();
+    tNow += dt;
+    if (tNow > spec.dur) tNow = 0;
+    tickCd(dt);
+    drawDynamic();
+    raf = requestAnimationFrame(loop);
+  }
+  function setPlaying(p) {
+    playing = p;
+    bPlay.textContent = p ? "멈춤" : "재생";
+    cancelAnimationFrame(raf);
+    last = 0;
+    if (p) raf = requestAnimationFrame(loop); else drawDynamic();
+  }
+  bPlay.addEventListener("click", () => setPlaying(!playing));
+  document.getElementById("bRestart").addEventListener("click", () => { tNow = 0; if (!playing) setPlaying(true); else drawDynamic(); });
+
+  // ================= 분류 설명과 고르기 =================
+  const REAL = DEMOS.filter(d => !d.extra).length;
+  const $ = id => document.getElementById(id);
+  const picker = $("picker");
+  const chipEls = [];
+  const groups = [];
+  DEMOS.forEach((d, i) => { let g = groups.find(x => x.name === d.group); if (!g) groups.push(g = { name: d.group, items: [] }); g.items.push(i); });
+  for (const g of groups) {
+    const row = document.createElement("div"); row.className = "pick-row";
+    const b = document.createElement("b"); b.textContent = g.name; row.appendChild(b);
+    const chips = document.createElement("div"); chips.className = "chips"; row.appendChild(chips);
+    for (const i of g.items) {
+      const d = DEMOS[i], c = document.createElement("button");
+      c.type = "button"; c.className = "chip"; c.id = "chip-" + d.id;
+      c.setAttribute("aria-pressed", "false");
+      c.textContent = d.name;
+      if (!d.ok || d.changed) { const dot = document.createElement("span"); dot.className = "dot"; const tt = d.changed ? "5차에서 바뀜, 확인 필요" : "보드 표시 확인 전"; dot.title = tt; c.appendChild(dot); c.title = tt; }
+      c.addEventListener("click", () => select(i));
+      chips.appendChild(c); chipEls[i] = c;
+    }
+    picker.appendChild(row);
+  }
+
+  function select(i, v) {
+    cur = (i + DEMOS.length) % DEMOS.length;
+    varIdx = v || 0;
+    const d = DEMOS[cur], spec = specOf();
+    tNow = playing ? 0 : (spec.still || 0);
+    chipEls.forEach((c, j) => c.setAttribute("aria-pressed", j === cur ? "true" : "false"));
+    const idx = DEMOS.slice(0, cur + 1).filter(x => !x.extra).length;
+    $("dGroup").textContent = d.extra ? d.group : `${d.group} · ${idx} / ${REAL}`;
+    $("dName").textContent = d.name + (d.nameTbd ? " (가칭)" : "");
+    const pill = $("dPill");
+    pill.className = "pill " + (d.ok && !d.changed ? "ok" : "warn");
+    pill.textContent = (d.extra ? d.rep + " · " : "") + (d.changed ? "5차에서 바뀜" : d.ok ? (d.extra ? "확정" : "보드 표시 확정") : "시안 확인 전");
+    $("dCount").textContent = d.n == null ? "" : `매핑표 ${d.n}줄`;
+    $("dCount").hidden = d.n == null;
+    $("dRep").textContent = d.extra ? (d.id === "hp4" ? "모든 토큰과 HUD" : "HUD 킬로그") : d.rep;
+    $("dRule").textContent = d.rule;
+    $("dScene").textContent = spec.scene || d.scene;
+    const pal = $("dPalette");
+    pal.replaceChildren();
+    pal.hidden = !d.palette;
+    if (d.palette) {
+      const h = document.createElement("b"); h.className = "pal-h"; h.textContent = "연결선 색표"; pal.appendChild(h);
+      for (const row of d.palette) {
+        const it = document.createElement("div"); it.className = "pal";
+        const sw = document.createElement("i"); sw.style.background = row.c;
+        const tx = document.createElement("span"); const nm = document.createElement("b"); nm.textContent = row.name; tx.append(nm, " " + row.who);
+        it.append(sw, tx); pal.appendChild(it);
+      }
+    }
+    const ask = $("dAsk");
+    ask.hidden = !d.ask;
+    ask.innerHTML = d.ask || "";
+    const vw = $("dVariants");
+    vw.replaceChildren();
+    vw.hidden = !d.variants;
+    if (d.variants) {
+      const lab = document.createElement("span"); lab.textContent = (d.varLabel || "다른 예") + ":"; vw.appendChild(lab);
+      d.variants.forEach((vv, j) => {
+        const c = document.createElement("button");
+        c.type = "button"; c.className = "chip"; c.id = "var-" + d.id + "-" + j;
+        c.textContent = vv.label; c.setAttribute("aria-pressed", j === varIdx ? "true" : "false");
+        c.addEventListener("click", () => select(cur, j));
+        vw.appendChild(c);
+      });
+    }
+    try { localStorage.setItem("p1s5-cur", d.id); } catch (e) {}
+    drawDynamic();
+  }
+  $("bPrev").addEventListener("click", () => select(cur - 1));
+  $("bNext").addEventListener("click", () => select(cur + 1));
+  document.addEventListener("keydown", e => {
+    if (e.target.closest && e.target.closest("input, textarea")) return;
+    if (e.key === "ArrowRight") { select(cur + 1); e.preventDefault(); }
+    else if (e.key === "ArrowLeft") { select(cur - 1); e.preventDefault(); }
+  });
+
+  // ================= 확인할 것 =================
+  const TODO = [
+    ["연결선 색표 (역할별 6가지 예)", "link"], ["치유 불가 보라·치유 증폭 노랑 딱지", "blast"], ["체력바 테두리 색 (치유 불가·증폭)", "hp4"],
+    ["강제 이동: 화살표 뺌", "push"], ["견인·운반: 분홍 연결선 + 무적 막", "carry"], ["탐지·노출: 위도우 붉은 실루엣", "detect"],
+    ["임시 물체: 이름표 + 씨앗", "temp"], ["생체장 치유 노랑", "zone"], ["킬로그: 화살표 색만", "kfeed"]
+  ];
+  let checks = {};
+  try { checks = JSON.parse(localStorage.getItem("p1s5-todo") || "{}") || {}; } catch (e) { checks = {}; }
+  const todo = $("todo");
+  TODO.forEach(([label, id], i) => {
+    const li = document.createElement("li");
+    const lab = document.createElement("label"); lab.className = "opt";
+    const cb = document.createElement("input"); cb.type = "checkbox"; cb.id = "todo-" + i; cb.checked = !!checks[i];
+    cb.addEventListener("change", () => { checks[i] = cb.checked; try { localStorage.setItem("p1s5-todo", JSON.stringify(checks)); } catch (e) {} });
+    const sp = document.createElement("span"); sp.textContent = label;
+    lab.append(cb, sp);
+    const go = document.createElement("button"); go.type = "button"; go.className = "go"; go.textContent = "보기";
+    go.setAttribute("aria-label", label + " 장면 보기");
+    go.addEventListener("click", () => select(DEMOS.findIndex(d => d.id === id)));
+    li.append(lab, go);
+    todo.appendChild(li);
+  });
+
+  // ================= 화면 맞춤과 방향 표시 =================
+  function fitView() {
+    let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    const save = ANG;
+    for (let a = 0; a < 360; a += 15) {
+      ANG = a * Math.PI / 180;
+      for (const [x, y] of [[0, 0], [W, 0], [W, D], [0, D]]) for (const h of [1.45, FALL]) {
+        const p = iso(x, y, h); x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]);
+      }
+      for (const t of BASE) {
+        const p = iso(t.x, t.y, heightAt(t.x, t.y)); const top = p[1] - (t.air ? t.air * HS : 12) - 36;
+        x0 = Math.min(x0, p[0] - 30); x1 = Math.max(x1, p[0] + 90); y0 = Math.min(y0, top); y1 = Math.max(y1, p[1] + 30);
+      }
+    }
+    ANG = save;
+    const cw = x1 - x0, ch = y1 - y0, topF = .12, botF = .12;
+    let vh = ch / (1 - topF - botF), vw = vh * 16 / 9;
+    if (vw < cw * 1.04) { vw = cw * 1.04; vh = vw * 9 / 16; }
+    const vx = (x0 + x1) / 2 - vw / 2, vy = y0 - vh * topF - (vh * (1 - topF - botF) - ch) / 2;
+    board.setAttribute("viewBox", `${f1(vx)} ${f1(vy)} ${f1(vw)} ${f1(vh)}`);
+  }
+  const compass = $("compass");
+  function drawCompass() {
+    compass.replaceChildren();
+    const k = 0.075;
+    const P = (x, y) => { const p = iso(x, y, 0); return [p[0] * k, p[1] * k]; };
+    el("polygon", { points: pts([P(0, 0), P(W, 0), P(W, D), P(0, D)]), fill: "#6d8f5a", stroke: "currentColor", "stroke-width": .8 }, compass);
+    el("polygon", { points: pts([P(0, 0), P(5, 0), P(5, 5), P(0, 5)]), fill: "#ece4cc" }, compass);
+    el("polygon", { points: pts([P(9, 0), P(13, 0), P(13, 4), P(9, 4)]), fill: "#c1a771" }, compass);
+    const me = BASE.find(t => t.me), mp = P(me.x, me.y);
+    el("circle", { cx: f1(mp[0]), cy: f1(mp[1]), r: 2.4, fill: "#3fa9f5", stroke: "#111", "stroke-width": .8 }, compass);
+  }
+
+  // ================= 회전 =================
+  const ANGLE_TEXT = { 0: "기본 시점", 90: "오른쪽으로 90° 돌림", 180: "반대편에서 봄", 270: "왼쪽으로 90° 돌림" };
+  let angDeg = 0, target = 0, rraf = 0;
+  function rotateBy(delta) {
+    target += delta;
+    const from = angDeg, to = target, t0 = performance.now(), dur = 460;
+    cancelAnimationFrame(rraf);
+    const done = () => {
+      angDeg = to; ANG = to * Math.PI / 180; renderTerrain(); if (!playing) drawDynamic();
+      $("angleText").textContent = ANGLE_TEXT[((to % 360) + 360) % 360];
+    };
+    if (reduce) return done();
+    const step = now => {
+      const k = Math.min(1, (now - t0) / dur), e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+      angDeg = from + (to - from) * e; ANG = angDeg * Math.PI / 180; renderTerrain(); if (!playing) drawDynamic();
+      if (k < 1) rraf = requestAnimationFrame(step); else done();
+    };
+    rraf = requestAnimationFrame(step);
+  }
+  $("rotL").addEventListener("click", () => rotateBy(-90));
+  $("rotR").addEventListener("click", () => rotateBy(90));
+
+  // ================= 보기 옵션 =================
+  const frame = $("frame");
+  $("optHud").addEventListener("change", e => frame.classList.toggle("hud-off", !e.target.checked));
+  $("optInfo").addEventListener("change", e => board.classList.toggle("info-off", !e.target.checked));
+  $("optLabels").addEventListener("change", e => board.classList.toggle("labels-off", !e.target.checked));
+  $("optDim").addEventListener("change", e => { dimOn = e.target.checked; drawDynamic(); });
+
+  // ================= 시작 =================
+  fitView();
+  renderTerrain();
+  updateHudCd();
+  let start = 0;
+  try { const saved = localStorage.getItem("p1s5-cur"); const si = DEMOS.findIndex(d => d.id === saved); if (si >= 0) start = si; } catch (e) {}
+  const hash = (location.hash || "").slice(1);
+  const hi = DEMOS.findIndex(d => d.id === hash);
+  if (hi >= 0) start = hi;
+  select(start);
+  setPlaying(playing);
+})();
+</script>
+
+</body></html>
