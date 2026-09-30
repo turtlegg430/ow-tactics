@@ -59,6 +59,7 @@
 | D-052 | 2026-09-30 | 내 컴퓨터의 저장소는 `E:\git\ow-tactics`. 기획 작업 폴더와 분리하고 경로 전체를 영어로 둠. 저장소 구조: 맨 위에 CLAUDE.md·README.md, `docs/` 기획 문서, `reference/` P1 5차 시안, `src/` 게임 코드, `.github/workflows/` 자동 배포 | 작업 중 파일이 공개 저장소에 섞이지 않게 하고, 한글·띄어쓰기 경로에서 나는 개발 도구 오류를 피함 | 확정 |
 | D-053 | 2026-09-30 | 배포는 GitHub Actions로 빌드한 결과물만 GitHub Pages에 올림 (Pages Source: GitHub Actions). `main`에 푸시하면 자동 배포 | Vite는 빌드가 필요함. 기획 문서(docs/)는 웹에 올라가지 않음 | 확정 |
 | D-054 | 2026-09-30 | 커밋 작성자 이메일은 GitHub noreply 주소(`333650928+turtlegg430@users.noreply.github.com`)를 쓰고, 개인 이메일이 드러나는 푸시는 막아 둠 | 공개 저장소에서는 커밋 이메일이 누구에게나 보임 | 확정 |
+| D-055 | 2026-09-30 | P2(개발 환경) 완료. 저장소에 문서 이관, Vite 8 + React 19 + TypeScript 6 빈 페이지, GitHub Actions 자동 배포(Vite 공식 예시를 따르되 빌드 Node 버전은 내 컴퓨터와 같은 24로 고정). 첫 배포 성공 후 https://turtlegg430.github.io/ow-tactics/ 에서 빈 페이지 열림 확인 | P2 → P3 전환 기준 충족: 문서가 저장소 docs/로 옮겨지고, 배포 주소에서 빈 페이지가 열림 | 확정 |
 
 ## 보류 항목
 | 항목 | 결정 시점 | 메모 |
