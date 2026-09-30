@@ -141,3 +141,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Vite 템플릿에서 합침: 내 컴퓨터 전용 설정 파일
+*.local
