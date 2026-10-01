@@ -932,8 +932,8 @@ export const floor: MapData = {
 
 /** 벽 스캐너 v7의 쏜 높이 순서에서 몸 높이(1.4m, 2.2m)의 자리. 둘 중 하나라도 막히면 벽 */
 const BODY_HEIGHTS = [1, 2]
-/** 벽 높이 (m). 1층처럼 하나로 통일한다. 실제 지붕 높이(최대 12m)로 세우면 벽이 바닥을 다 가려서 미로처럼 보였다 */
-const WALL_H = 3
+/** 벽 높이: 벽 칸을 덮는 스캔 칸들의 맨 위 면 높이 가운데 값 (실제 크기, 사용자 요청). 몸 높이에서 막힌 벽이라 이보다 낮지 않다 */
+const WALL_MIN_H = 1.5
 
 interface WallScan {
   /** 스캔 점 수 (보드 칸 수와 같다) */
@@ -974,7 +974,7 @@ function readWalls(file: string): WallScan {
 /**
  * 1층 보드에 벽 칸을 세운다. 이웃한 두 칸 사이가 몸 높이에서 막혔으면 벽이 있다.
  * 벽이 서는 칸: 양쪽에서 다 막혔으면 막힌 거리로 벽 가운데가 어느 칸 쪽인지, 한쪽만 막혔으면 반대쪽 칸(그 칸 가운데가 벽 속).
- * 1층 바깥(빈 칸) 쪽에 서는 벽은 경기 구역 가장자리의 건물이다. 벽 높이는 WALL_H 하나
+ * 1층 바깥(빈 칸) 쪽에 서는 벽은 경기 구역 가장자리의 건물이다. 벽 높이는 실제 크기 (v5 맨 위 면)
  */
 function buildWalls(t: ScanTerrain, floor: MapData, ws: WallScan): MapData {
   const w = floor.rows[0].length
@@ -998,11 +998,22 @@ function buildWalls(t: ScanTerrain, floor: MapData, ws: WallScan): MapData {
         const da = ray(bx, by, ab)
         const db = ray(nx, ny, ba)
         if (da === null && db === null) continue
-        const nearA = da !== null && db !== null ? (da + 1 - db) / 2 < 0.5 : db === null
+        // 한쪽만 막히면, 광선이 못 맞힌 쪽(그 칸 가운데가 벽 속이라 벽을 지나쳐 버린 쪽)이 벽 칸
+        const nearA = da !== null && db !== null ? (da + 1 - db) / 2 < 0.5 : da === null
         wall.add(nearA ? bx + ',' + by : nx + ',' + ny)
       }
+  const k = Math.round((floor.scale?.cellMeters ?? 1) / t.cell)
+  const heightOf = (bx: number, by: number) => {
+    const tops: number[] = []
+    for (let dy = 0; dy < k; dy++)
+      for (let dx = 0; dx < k; dx++) {
+        const v = t.top[by * k + dy]?.[bx * k + dx]
+        if (v !== null && v !== undefined) tops.push(v * t.hUnit)
+      }
+    return Math.round(Math.max(WALL_MIN_H, tops.length ? median(tops) : WALL_MIN_H) * 10) / 10
+  }
   const rows = floor.rows.map((r, by) => [...r].map((ch, bx) => (wall.has(bx + ',' + by) ? 'W' : ch)).join(''))
-  const cellHeights = rows.map(r => [...r].map(ch => (ch === 'W' ? WALL_H : 0)))
+  const cellHeights = rows.map((r, by) => [...r].map((ch, bx) => (ch === 'W' ? heightOf(bx, by) : 0)))
   return { ...floor, id: `${t.id}-walls`, name: '왕의 길 A (1층 + 벽)', rows, cellHeights }
 }
 
