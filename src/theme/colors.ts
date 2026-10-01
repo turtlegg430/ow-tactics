@@ -1,6 +1,7 @@
 import type { Floor } from '../data/types.ts'
 
-// 보드 색. 값은 P1 5차 시안 그대로다. 층 색과 낙사 색은 docs/DESIGN.md '층 구분' 표와 같다
+// 보드 색. 값은 P1 5차 시안 그대로다. 층 색과 낙사 색은 docs/DESIGN.md '층 구분' 표와 같다.
+// 계단·구조물·지붕·팀 색은 임시 값이다 (DESIGN.md, 실제 맵·토큰 작업 때 확정)
 export const FLOOR_COLORS: Record<Floor, string> = {
   B: '#5b4636',
   G: '#6d8f5a',
