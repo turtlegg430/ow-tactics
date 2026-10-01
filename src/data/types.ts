@@ -107,4 +107,9 @@ export interface ScanTerrain {
   topN: (number | null)[][]
   /** 칸마다 설 수 있는 면의 높이 목록. 위에서부터 */
   walk: number[][][]
+  /**
+   * 칸마다 한 글자. 경기 구역 (D-068). i = 경기 안, o = 경기 밖, ? = StatBanana 그림 밖이라 모름.
+   * 경기 안 칸의 밟는 면은 설 수 있는 면 중 floorBounds.high 아래인 것이다. 그 위는 길·방 위의 건물·지붕으로 본다
+   */
+  play: string[]
 }

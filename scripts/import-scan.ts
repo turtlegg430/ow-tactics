@@ -5,12 +5,13 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { ScanTerrain } from '../src/data/types.ts'
+import { readPng, type Png } from './png.ts'
 
 /** 왕의 길 A 스캔 설정. 파일 이름은 기획 작업 폴더 '스캔\'에 있는 것 */
 const MAP = {
   id: 'kings-row-a',
   csv: ['scan-test-04-a.csv', 'scan-test-04-b.csv', 'scan-test-04-c.csv'],
-  /** StatBanana 그림과 맞춤값 (겹쳐 보기 전용) */
+  /** StatBanana 그림과 맞춤값. 경기 구역 마스크(D-068)와 겹쳐 보기에 쓴다 */
   image: 'kingsrow-A.png',
   fit: 'kingsrow_plain-맞춤값.json',
   out: 'src/data/maps/kings-row-a/terrain.ts',
@@ -30,6 +31,11 @@ const PILLAR_RISE = 1.0
 const PILLAR_MAX_CELLS = 2
 /** 가는 물체 둘레 8칸 중 이만큼은 위가 트인 비슷한 높이의 바닥이어야 한다 */
 const PILLAR_OPEN = 5
+
+/** 경기 구역 마스크: 흰 경계선을 이만큼(px) 두껍게 해서 점선 틈을 막는다 */
+const LINE_GROW = 7
+/** 바탕으로 번진 덩어리가 경계선에 이 비율 이상 닿아 있어야 진짜 구멍. 그보다 적으면 경기 안의 그림자로 보고 되돌린다 */
+const HOLE_LINE_RATIO = 0.3
 
 /** 플레이어 변수 번호 (스캐너 코드의 variables 순서) */
 const PLAYER_VARS = { Step: 4, X0: 5, Z0: 6, NX: 7, NZ: 8, Layers: 19, Temp: 18 }
@@ -64,7 +70,7 @@ interface Cell {
   filled: boolean
 }
 
-/** 겹쳐 보기에 표시할 수상한 곳. 보드 칸 범위 [x0, x1) × [y0, y1) */
+/** 겹쳐 보기에 표시할 확인 대상. 보드 칸 범위 [x0, x1) × [y0, y1) */
 interface Suspect {
   text: string
   x0: number
@@ -310,7 +316,7 @@ function fillGaps(cells: Cell[], nx: number, nz: number) {
 
 // ---------- 5. 보드 좌표로 바꾸기 ----------
 
-function toBoard(cells: Cell[], g: ReturnType<typeof merge>): ScanTerrain {
+function toBoard(cells: Cell[], g: ReturnType<typeof merge>): Omit<ScanTerrain, 'play'> {
   const { upper, high } = MAP.floorBounds
   const floorOf = (c: Cell) => {
     if (!c.surf.length) return '.'
@@ -364,7 +370,134 @@ function toBoard(cells: Cell[], g: ReturnType<typeof merge>): ScanTerrain {
   }
 }
 
-// ---------- 6. 파일 쓰기 ----------
+// ---------- 6. 경기 구역 (D-068) ----------
+
+/** 게임 좌표 → StatBanana 그림 픽셀. 맞춤값 규칙: p = k × (−X + iZ) + t, 픽셀 = (p의 실수부, −p의 허수부) */
+interface Fit {
+  k: [number, number]
+  t: [number, number]
+}
+
+/**
+ * 칸마다 경기 안(i)·밖(o)·그림 밖(?)을 정한다.
+ * StatBanana 그림에서 경기 구역 바깥은 어두운 회색 육각 무늬 바탕이고, 경기 구역은 흰 경계선으로 둘러싸여 있다.
+ * 바탕색만 이어진 곳을 따라 번진 영역을 경기 밖으로 본다. 흰 선은 넘지 않는다
+ */
+function playMask(t: Omit<ScanTerrain, 'play'>, img: Png, fit: Fit) {
+  const { w, h } = img
+  const n = w * h
+  const rgb = (i: number) => [img.data[i * img.bpp], img.data[i * img.bpp + 1], img.data[i * img.bpp + 2]]
+  // 흰 선을 LINE_GROW만큼 두껍게 (가로로 한 번, 세로로 한 번 번지기)
+  const white = new Uint8Array(n)
+  for (let i = 0; i < n; i++) if (rgb(i).every(v => v > 200)) white[i] = 1
+  const grow = (src: Uint8Array, along: 'x' | 'y') => {
+    const dst = new Uint8Array(n)
+    const [len, lines, at] = along === 'x' ? [w, h, (l: number, k: number) => l * w + k] : [h, w, (l: number, k: number) => k * w + l]
+    for (let l = 0; l < lines; l++) {
+      let last = -1e9
+      for (let k = 0; k < len; k++) {
+        if (src[at(l, k)]) last = k
+        if (k - last <= LINE_GROW) dst[at(l, k)] = 1
+      }
+      last = 1e9
+      for (let k = len - 1; k >= 0; k--) {
+        if (src[at(l, k)]) last = k
+        if (last - k <= LINE_GROW) dst[at(l, k)] = 1
+      }
+    }
+    return dst
+  }
+  const line = grow(grow(white, 'x'), 'y')
+  // 바탕색: rgb 30~48 근처의 무채색
+  const bg = new Uint8Array(n)
+  for (let i = 0; i < n; i++) {
+    const [r, g, b] = rgb(i)
+    if (r >= 30 && r <= 48 && g >= 28 && g <= 46 && b >= 26 && b <= 44 && Math.max(r, g, b) - Math.min(r, g, b) <= 7) bg[i] = 1
+  }
+  // 11×11이 모두 바탕색인 곳에서 시작해 바탕색을 따라 번진다
+  const run = new Uint16Array(n)
+  for (let y = 0; y < h; y++) {
+    let k = 0
+    for (let x = 0; x < w; x++) {
+      k = bg[y * w + x] ? k + 1 : 0
+      run[y * w + x] = k
+    }
+  }
+  const out = new Uint8Array(n)
+  const stack: number[] = []
+  for (let y = 10; y < h; y++)
+    for (let x = 10; x < w; x++) {
+      let ok = true
+      for (let dy = 0; dy < 11 && ok; dy++) if (run[(y - dy) * w + x] < 11) ok = false
+      const c = (y - 5) * w + x - 5
+      if (ok && !out[c] && !line[c]) {
+        out[c] = 1
+        stack.push(c)
+      }
+    }
+  const step4 = (i: number) => {
+    const x = i % w
+    return [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i >= w ? i - w : -1, i < n - w ? i + w : -1]
+  }
+  while (stack.length) {
+    const i = stack.pop()!
+    for (const j of step4(i)) {
+      if (j >= 0 && !out[j] && !line[j] && bg[j]) {
+        out[j] = 1
+        stack.push(j)
+      }
+    }
+  }
+  // 경기 안의 그림자가 바탕색과 같아서 생긴 작은 '밖' 덩어리를 되돌린다.
+  // 그림 가장자리에 닿거나 둘레가 흰 선에 충분히 닿아 있는 덩어리만 진짜 경기 밖으로 남긴다
+  const seen = new Uint8Array(n)
+  let reverted = 0
+  for (let s = 0; s < n; s++) {
+    if (!out[s] || seen[s]) continue
+    seen[s] = 1
+    const comp = [s]
+    let edge = false
+    let toLine = 0
+    let toInside = 0
+    for (let q = 0; q < comp.length; q++) {
+      const i = comp[q]
+      const x = i % w
+      if (x === 0 || x === w - 1 || i < w || i >= n - w) edge = true
+      for (const j of step4(i)) {
+        if (j < 0) continue
+        if (out[j]) {
+          if (!seen[j]) {
+            seen[j] = 1
+            comp.push(j)
+          }
+        } else if (line[j]) toLine++
+        else toInside++
+      }
+    }
+    if (!edge && toLine < HOLE_LINE_RATIO * (toLine + toInside)) {
+      for (const i of comp) out[i] = 0
+      reverted += comp.length
+    }
+  }
+  // 칸 가운데 픽셀로 판정
+  const [kr, ki] = fit.k
+  const [tr, ti] = fit.t
+  const rows: string[] = []
+  for (let y = 0; y < t.d; y++) {
+    let row = ''
+    for (let x = 0; x < t.w; x++) {
+      const X = t.toGame.originX - (x + 0.5) * t.cell
+      const Z = t.toGame.originZ - (y + 0.5) * t.cell
+      const px = Math.round(-kr * X - ki * Z + tr)
+      const py = Math.round(ki * X - kr * Z - ti)
+      row += px < 0 || py < 0 || px >= w || py >= h ? '?' : out[py * w + px] ? 'o' : 'i'
+    }
+    rows.push(row)
+  }
+  return { rows, revertedPx: reverted }
+}
+
+// ---------- 7. 파일 쓰기 ----------
 
 function terrainSource(t: ScanTerrain, csv: string[]) {
   const rows = (a: unknown[]) => '[\n' + a.map(r => '    ' + JSON.stringify(r) + ',\n').join('') + '  ]'
@@ -386,14 +519,15 @@ export const terrain: ScanTerrain = {
   top: ${rows(t.top)},
   topN: ${rows(t.topN)},
   walk: ${rows(t.walk)},
+  play: ${rows(t.play)},
 }
 `
 }
 
-// ---------- 7. 보고 ----------
+// ---------- 8. 보고 ----------
 
 function heightTable(t: ScanTerrain) {
-  // 0.5m 칸으로 센다. 맨 위 = 칸마다 가장 높은 설 수 있는 면, 전체 = 아래층 면까지
+  // 경기 안 칸만 0.5m 칸으로 센다. 맨 위 = 칸마다 가장 높은 설 수 있는 면, 전체 = 아래층 면까지
   const bins = new Map<number, [number, number]>()
   const add = (hq: number, first: boolean) => {
     const y = hq * t.hUnit
@@ -403,7 +537,7 @@ function heightTable(t: ScanTerrain) {
     v[1]++
     bins.set(b, v)
   }
-  for (const row of t.walk) for (const w of row) w.forEach((hq, k) => add(hq, k === 0))
+  t.walk.forEach((row, y) => row.forEach((w, x) => t.play[y][x] === 'i' && w.forEach((hq, k) => add(hq, k === 0))))
   const keys = [...bins.keys()].sort((a, b) => a - b)
   const max = Math.max(...keys.map(k => bins.get(k)![0]))
   const label = (b: number) => (b === -2.5 ? '−2m 미만' : b === 12 ? '12m 이상' : `${b.toFixed(1)}~${(b + 0.5).toFixed(1)}m`)
@@ -413,25 +547,33 @@ function heightTable(t: ScanTerrain) {
   })
 }
 
-function findSuspects(t: ScanTerrain): Suspect[] {
-  const out: Suspect[] = []
-  const at = (c: number) => ({ x: c % t.w, y: Math.floor(c / t.w) })
-  const groups = (mask: (x: number, y: number) => boolean, minCells: number, what: (n: number) => string) => {
-    for (const k of components(t.w, t.d, c => mask(c % t.w, Math.floor(c / t.w)))) {
-      if (k.length < minCells) continue
-      const xs = k.map(c => at(c).x)
-      const ys = k.map(c => at(c).y)
-      out.push({ text: what(k.length), x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs) + 1, y1: Math.max(...ys) + 1 })
-    }
+/** 경기 안 칸의 밟는 면: 설 수 있는 면 중 높은 곳 경계 아래 (D-068) */
+const standOf = (t: ScanTerrain, x: number, y: number) => t.walk[y][x].filter(hq => hq * t.hUnit < t.floorBounds.high)
+
+/**
+ * 확인 대상: 경기 안인데 밟는 면이 없거나 3개 이상인 칸 덩어리. 큰 것부터.
+ * 빈틈 채우기 기준(GAP_MAX_CELLS)보다 큰 덩어리만 번호를 붙이고, 작은 것은 개수만 센다 (벽 끝·경계선 위 칸이 대부분)
+ */
+function reviewGroups(t: ScanTerrain) {
+  const odd = (c: number) => {
+    const x = c % t.w
+    const y = (c - x) / t.w
+    const n = standOf(t, x, y).length
+    return t.play[y][x] === 'i' && (n === 0 || n >= 3)
   }
-  const fl = (x: number, y: number) => t.floor[y][x]
-  const w0 = (x: number, y: number) => t.walk[y][x][0]
-  groups((x, y) => fl(x, y) === '.', 1, n => `광선에 맞은 것이 없는 곳 ${n}칸 (맵 밖 허공?)`)
-  groups((x, y) => w0(x, y) !== undefined && Math.abs(w0(x, y) * t.hUnit + 1) <= 0.1, 20, n => `−1.0m 바닥이 넓게 깔린 곳 ${n}칸 (경기 구역 밖?)`)
-  groups((x, y) => fl(x, y) === 'X', GAP_MAX_CELLS + 1, n => `설 수 있는 면이 없는 넓은 곳 ${n}칸 (지붕만 있는 건물·물체)`)
-  groups((x, y) => w0(x, y) !== undefined && w0(x, y) * t.hUnit < -1.5, 1, n => `−1.5m보다 낮은 바닥 ${n}칸`)
-  groups((x, y) => w0(x, y) !== undefined && w0(x, y) * t.hUnit >= 30, 20, n => `30m 이상 높은 곳 ${n}칸 (건물 꼭대기·맵 밖?)`)
-  return out
+  const all = components(t.w, t.d, odd)
+  const small = all.filter(k => k.length <= GAP_MAX_CELLS)
+  const groups: Suspect[] = all
+    .filter(k => k.length > GAP_MAX_CELLS)
+    .sort((a, b) => b.length - a.length)
+    .map(k => {
+      const xs = k.map(c => c % t.w)
+      const ys = k.map(c => Math.floor(c / t.w))
+      const none = k.filter((_, i) => standOf(t, xs[i], ys[i]).length === 0).length
+      const what = [none && `밟는 면 없음 ${none}칸`, k.length - none && `9m 아래 면 3개 이상 ${k.length - none}칸`].filter(Boolean).join(', ')
+      return { text: what, x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs) + 1, y1: Math.max(...ys) + 1 }
+    })
+  return { groups, smallGroups: small.length, smallCells: small.reduce((a, k) => a + k.length, 0) }
 }
 
 /** 조각 경계에서 이웃 열끼리 맨 위 면 높이가 0.5m 넘게 다른 비율. 경계 양옆 4열의 비율과 비슷하면 이음매가 맞는 것 */
@@ -460,13 +602,17 @@ function seamCheck(cells: Cell[], g: ReturnType<typeof merge>, chunks: Chunk[]) 
 
 const dir = process.argv[2]
 if (!dir || !fs.existsSync(dir)) fail('스캔 폴더를 알려 줘야 한다. 예: npm run import-scan -- "E:\\...\\스캔"')
+for (const f of [MAP.image, MAP.fit]) if (!fs.existsSync(path.join(dir, f))) fail(`${f}가 스캔 폴더에 없음 (경기 구역 마스크에 필요)`)
+const fit = JSON.parse(fs.readFileSync(path.join(dir, MAP.fit), 'utf8')) as Fit
 
 const chunks = MAP.csv.map(f => readChunk(dir, f))
 const grid = merge(chunks)
 const cells = classify(grid)
 const seams = seamCheck(cells, grid, chunks)
 const fill = fillGaps(cells, grid.nx, grid.nz)
-const terrain = toBoard(cells, grid)
+const board = toBoard(cells, grid)
+const mask = playMask(board, readPng(path.join(dir, MAP.image)), fit)
+const terrain: ScanTerrain = { ...board, play: mask.rows }
 
 const src = terrainSource(terrain, MAP.csv)
 const outPath = path.join(root, MAP.out)
@@ -485,8 +631,17 @@ const stats = {
   filled: flagCount('fF'),
   restored,
 }
+// 경기 안 칸을 밟는 면 개수로 나눈다. 경기 구역이 그림 가장자리에서 잘린 곳 = 그림 밖 칸과 맞닿은 경기 안 칸
+const standCount = { 0: 0, 1: 0, 2: 0, 3: 0 }
+let cut = 0
+for (let y = 0; y < terrain.d; y++)
+  for (let x = 0; x < terrain.w; x++) {
+    if (terrain.play[y][x] !== 'i') continue
+    standCount[Math.min(3, standOf(terrain, x, y).length) as 0 | 1 | 2 | 3]++
+    if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => terrain.play[y + dy]?.[x + dx] === '?')) cut++
+  }
 const table = heightTable(terrain)
-const suspects = findSuspects(terrain)
+const review = reviewGroups(terrain)
 
 const lines = [
   `격자 ${terrain.w} × ${terrain.d}칸 (칸 ${terrain.cell}m), 게임 X ${grid.x0}~${grid.x0 + (grid.nx - 1) * grid.step}, Z ${grid.z0}~${grid.z0 + (grid.nz - 1) * grid.step}`,
@@ -498,29 +653,29 @@ const lines = [
   `채움 ${stats.filled}칸 = 바닥에 못 닿은 점 ${fill.gapCells}칸 (${fill.gapGroups}곳) + 가는 물체 ${fill.pillarCells}칸 (${fill.pillarGroups}곳)`,
   `1488 복원 ${restored}개`,
   '',
-  `높이 분포 (0.5m 칸, 경계 초안 ${MAP.floorBounds.upper}m·${MAP.floorBounds.high}m는 ◀ 표시)`,
+  `경기 구역: 안 ${count(terrain.play, 'i')}칸, 밖 ${count(terrain.play, 'o')}칸, 그림 밖이라 모름 ${count(terrain.play, '?')}칸 (그림자로 잘못 본 ${mask.revertedPx}px은 되돌림)`,
+  `경기 안 칸의 밟는 면(${terrain.floorBounds.high}m 아래) 개수: 1개 ${standCount[1]}, 2개(위·아래층) ${standCount[2]}, 없음 ${standCount[0]}, 3개 이상 ${standCount[3]}`,
+  `경기 구역이 그림 가장자리에서 잘린 곳 ${cut}칸`,
+  '',
+  `높이 분포 (경기 안 칸, 0.5m 칸, 경계 초안 ${MAP.floorBounds.upper}m·${MAP.floorBounds.high}m는 ◀ 표시)`,
   '높이            맨 위   전체',
   ...table.map(r => `${r.label.padEnd(14)} ${String(r.first).padStart(6)} ${String(r.all).padStart(6)} ${r.edge ? '◀' : ' '} ${r.bar}`),
   '',
-  `수상한 곳 ${suspects.length}개`,
-  ...suspects.map(s => `- ${s.text}, 보드 x ${s.x0}~${s.x1} y ${s.y0}~${s.y1}`),
+  `확인 대상 ${review.groups.length}곳 (경기 안인데 밟는 면이 없거나 3개 이상, ${GAP_MAX_CELLS}칸보다 큰 덩어리). 작은 덩어리 ${review.smallGroups}곳 ${review.smallCells}칸은 번호 없이 색만`,
+  ...review.groups.map((s, i) => `${i + 1}. ${s.text}, 보드 x ${s.x0}~${s.x1} y ${s.y0}~${s.y1}`),
   '',
   ...(problems.length ? ['주의', ...problems.map(p => '- ' + p)] : ['주의할 문제 없음']),
   '',
   `지형 데이터: ${MAP.out} (${(Buffer.byteLength(src) / 1024).toFixed(0)}KB)`,
 ]
 
-// 겹쳐 보기: 스캔 폴더 안 '미리보기\'에 쓴다 (저장소에 넣지 않음)
-const fitPath = path.join(dir, MAP.fit)
-if (fs.existsSync(fitPath) && fs.existsSync(path.join(dir, MAP.image))) {
-  const fit = JSON.parse(fs.readFileSync(fitPath, 'utf8')) as { k: [number, number]; t: [number, number] }
-  const outDir = path.join(dir, '미리보기')
-  fs.mkdirSync(outDir, { recursive: true })
-  const htmlPath = path.join(outDir, `${MAP.id}-겹쳐보기.html`)
-  const data = JSON.stringify({ terrain, image: '../' + MAP.image, fit: { k: fit.k, t: fit.t }, report: lines.join('\n'), suspects })
-  const template = fs.readFileSync(path.join(root, 'scripts/scan-preview.html'), 'utf8')
-  fs.writeFileSync(htmlPath, template.replace('const DATA = __DATA__', () => 'const DATA = ' + data))
-  lines.push(`겹쳐 보기: ${htmlPath}`)
-} else lines.push(`겹쳐 보기는 건너뜀 (${MAP.image} 또는 ${MAP.fit} 없음)`)
+// 겹쳐 보기: 스캔 폴더 안 '미리보기'에 쓴다 (저장소에 넣지 않음)
+const outDir = path.join(dir, '미리보기')
+fs.mkdirSync(outDir, { recursive: true })
+const htmlPath = path.join(outDir, `${MAP.id}-겹쳐보기.html`)
+const data = JSON.stringify({ terrain, image: '../' + MAP.image, fit: { k: fit.k, t: fit.t }, report: lines.join('\n'), review: review.groups })
+const template = fs.readFileSync(path.join(root, 'scripts/scan-preview.html'), 'utf8')
+fs.writeFileSync(htmlPath, template.replace('const DATA = __DATA__', () => 'const DATA = ' + data))
+lines.push(`겹쳐 보기: ${htmlPath}`)
 
 console.log(lines.join('\n'))
