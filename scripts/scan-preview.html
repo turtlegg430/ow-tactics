@@ -69,6 +69,8 @@
   <p id="progress"></p>
   <div class="row"><button id="save">판정 저장</button> <span id="saved"></span></div>
   <p class="note">저장한 파일은 스캔 폴더에 <b class="lname"></b> 이름으로 두고 변환을 다시 돌리면 반영된다. 판정은 이 브라우저에도 자동으로 기억된다</p>
+  <h2>2층 위치 찍기 결과 (누르면 그 자리로)</h2>
+  <ol id="stamps"></ol>
   <h2>2층 후보 목록 (누르면 그 자리로)</h2>
   <ol id="cands"></ol>
 
@@ -87,7 +89,7 @@
 <script>
 const DATA = __DATA__;
 const T = DATA.terrain, REG = DATA.regions, NR = DATA.nodeRegion;
-const COLORS = { G: '#6d8f5a', U: '#ece4cc', R: '#a8323a', O: '#55555c', cand: '#e0a526', stair: '#9a9484', auto: '#9b6bc8', no: '#3a3a40' };
+const COLORS = { G: '#6d8f5a', U: '#ece4cc', R: '#a8323a', O: '#55555c', cand: '#e0a526', stair: '#9a9484', auto: '#9b6bc8', no: '#3a3a40', est: '#8fb8e8' };
 const KIND = { low: '1층 높이', cand: '2층 후보', stair: '계단', small: '작은 면 (자동으로 뺌)', thin: '폭 1m 이하 (자동으로 뺌)' };
 const $ = id => document.getElementById(id);
 const cv = $('cv'), ctx = cv.getContext('2d'), img = $('img'), stack = $('stack'), main = $('main');
@@ -128,9 +130,15 @@ function loadLabels() {
 }
 const labelList = () => [...labels].map(([k, label]) => ({ x: REG[k].x, y: REG[k].y, hq: REG[k].hq, label }));
 function remember() { try { localStorage.setItem(STORE, JSON.stringify(labelList())); } catch (e) { /* 무시 */ } }
-/** 덩어리의 지금 판정: 사용자가 고른 것, 없으면 종류에 따른 기본값 */
+// 2층 위치 찍기 (D-070): 찍은 덩어리는 2층, 찍었는데 스캔에 없는 바닥은 넓이를 추정해 새로 만든 2층
+const STAMPED = new Set(DATA.stampRegions);
+const ADDED = new Map();
+DATA.added.forEach(f => f.cells.forEach(c => ADDED.set(c, f)));
+/** 덩어리의 지금 판정: 사용자가 고른 것 > 찍은 곳 > 종류에 따른 기본값. 찍기를 했으면 찍지 않은 2층 후보는 아님 */
 function stateOf(k) {
   if (labels.has(k)) return labels.get(k);
+  if (STAMPED.has(k)) return '2층';
+  if (REG[k].kind === 'cand' && DATA.stamps.length) return '아님';
   return { low: '1층', cand: '미정', stair: '계단', small: '자동 아님', thin: '자동 아님' }[REG[k].kind];
 }
 const STATE_COLOR = { '1층': COLORS.G, '2층': COLORS.U, '미정': COLORS.cand, '계단': COLORS.stair };
@@ -141,10 +149,14 @@ function cellColor(x, y) {
   const s = stand(x, y);
   if (odd(x, y) && $('which').value !== 'judge') return COLORS.R;
   if ($('which').value === 'judge') {
-    if (!s.length) return COLORS.R;
-    const ks = NR[y * T.w + x];
-    for (const k of ks) { const c = STATE_COLOR[stateOf(k)]; if (c) return c; }
-    return null;
+    if (!s.length) return ADDED.has(y * T.w + x) ? COLORS.est : COLORS.R;
+    const c0 = y * T.w + x, ks = NR[c0], est = ADDED.get(c0);
+    for (const [i, k] of ks.entries()) {
+      const c = STATE_COLOR[stateOf(k)];
+      if (est && est.hq > s[i]) return COLORS.est;
+      if (c) return c;
+    }
+    return est ? COLORS.est : null;
   }
   return COLORS[floorOf($('which').value === 'lo' ? s[s.length - 1] : s[0])];
 }
@@ -207,6 +219,19 @@ function draw() {
     ctx.strokeStyle = '#00c8ff'; ctx.lineWidth = 0.12;
     const X = gameX(pickCell.x + 0.5), Z = gameZ(pickCell.y + 0.5);
     ctx.strokeRect(X - h, Z - h, 2 * h, 2 * h);
+  }
+  if ($('which').value === 'judge') {
+    DATA.stamps.forEach(st => {
+      ctx.setTransform(M);
+      const X = gameX(st.x + 0.5), Z = gameZ(st.y + 0.5);
+      ctx.beginPath(); ctx.arc(X, Z, 0.45, 0, Math.PI * 2);
+      ctx.fillStyle = st.text.includes('무시') || st.text.includes('못') || st.text.includes('버림') ? '#ff453a' : '#00c8ff'; ctx.fill();
+      const c = M.transformPoint(new DOMPoint(X, Z));
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.font = 'bold 22px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 4; ctx.strokeStyle = '#000'; ctx.strokeText(String(st.n), c.x + 12, c.y);
+      ctx.fillStyle = '#fff'; ctx.fillText(String(st.n), c.x + 12, c.y);
+    });
   }
   if ($('showReview').checked) {
     DATA.review.forEach((s, i) => {
@@ -276,7 +301,9 @@ function showPicks() {
   box.innerHTML = '';
   if (!pickCell) return;
   const { x, y } = pickCell, ks = NR[y * T.w + x], s = stand(x, y);
-  if (!ks.length) { box.innerHTML = '<p class="note">이 칸에는 밟는 면이 없다 (스캔이 바닥에 못 닿은 곳일 수 있음)</p>'; return; }
+  const est = ADDED.get(y * T.w + x);
+  if (est) box.insertAdjacentHTML('beforeend', `<div class="pick"><b>${m(est.hq)}</b> · 스캔에 없는 2층 (찍기 ${est.n}번, 넓이 추정)<br><span class="note">고치려면 게임에서 다시 찍거나 겹쳐 보기 판정으로 아래 면을 고른다</span></div>`);
+  if (!ks.length) { if (!est) box.innerHTML = '<p class="note">이 칸에는 밟는 면이 없다 (스캔이 바닥에 못 닿은 곳일 수 있음)</p>'; return; }
   ks.forEach((k, i) => {
     const r = REG[k], st = stateOf(k), div = document.createElement('div');
     div.className = 'pick' + (k === selRegion ? ' sel' : '');
@@ -299,7 +326,7 @@ function showPicks() {
 
 function progress() {
   const cands = REG.map((r, k) => k).filter(k => REG[k].kind === 'cand');
-  const n = v => cands.filter(k => labels.get(k) === v).length;
+  const n = v => cands.filter(k => stateOf(k) === v).length;
   $('progress').textContent = `2층 후보 ${cands.length}곳: 2층 ${n('2층')}, 아님 ${n('아님')}, 계단 ${n('계단')}, 미정 ${cands.length - n('2층') - n('아님') - n('계단')}` +
     (labels.size ? ` · 그 밖에 바꾼 덩어리 ${[...labels.keys()].filter(k => REG[k].kind !== 'cand').length}곳` : '');
   const ol = $('cands');
@@ -329,11 +356,24 @@ async function save() {
   $('saved').textContent = `내려받음 (${labels.size}개). 스캔 폴더로 옮겨 주세요`;
 }
 
+function stampList() {
+  const ol = $('stamps');
+  if (!DATA.stamps.length) { ol.outerHTML = '<p class="note">아직 없음. 게임에서 floor-stamper로 찍어 스캔 폴더에 저장하면 나온다</p>'; return; }
+  DATA.stamps.forEach(st => {
+    const li = document.createElement('li');
+    li.value = st.n;
+    li.textContent = `${m(st.hq)}: ${st.text}`;
+    li.onclick = () => { pickCell = { x: st.x, y: st.y }; const ks = NR[st.y * T.w + st.x] || []; selRegion = ks.find(k => STAMPED.has(k)) ?? -1; showPicks(); draw(); scrollToCell(st.x, st.y); };
+    ol.appendChild(li);
+  });
+}
+
 function legend() {
   const judge = $('which').value === 'judge';
   const rows = (judge ? [
     [COLORS.G, `1층 (${T.floorBounds.upper}m 미만)`],
-    [COLORS.U, '2층 (판정함)'],
+    [COLORS.U, '2층 (찍었거나 판정함)'],
+    [COLORS.est, '2층 (스캔에 없어 넓이를 추정함)'],
     [COLORS.cand, '2층 후보 (미정)'],
     [COLORS.stair, '계단'],
     [COLORS.R, '밟는 면 없음 (스캔이 바닥에 못 닿음)'],
@@ -372,7 +412,7 @@ function start(w, h) {
 $('report').textContent = DATA.report;
 document.querySelectorAll('.high').forEach(e => { e.textContent = T.floorBounds.high; });
 document.querySelectorAll('.lname').forEach(e => { e.textContent = DATA.labelsName; });
-loadLabels(); legend(); review(); progress();
+loadLabels(); legend(); review(); progress(); stampList();
 $('save').onclick = save;
 for (const id of ['showFloor', 'showTwo', 'showAuto', 'showNo', 'showFill', 'showReview', 'showOut']) $(id).addEventListener('change', draw);
 $('which').addEventListener('change', () => { legend(); draw(); });
