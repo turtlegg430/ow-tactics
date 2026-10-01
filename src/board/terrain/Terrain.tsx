@@ -23,7 +23,9 @@ export const Terrain = memo(function Terrain({ terrain, view }: Props) {
 
   const order: [number, number, number][] = []
   for (let gy = 0; gy < terrain.d; gy++) {
-    for (let gx = 0; gx < terrain.w; gx++) order.push([gx, gy, depth(view, gx + 0.5, gy + 0.5)])
+    for (let gx = 0; gx < terrain.w; gx++) {
+      if (terrain.tiles[gy][gx].type !== 'void') order.push([gx, gy, depth(view, gx + 0.5, gy + 0.5)])
+    }
   }
   order.sort((a, b) => a[2] - b[2])
 

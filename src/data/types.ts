@@ -49,10 +49,12 @@ export interface MapData {
   id: string
   name: string
   /**
-   * 한 글자 = 한 칸, 한 줄 = 한 행. U·M·G·B = 층, F = 낙사, W = 벽·엄폐물.
+   * 한 글자 = 한 칸, 한 줄 = 한 행. U·M·G·B = 층, F = 낙사, W = 벽·엄폐물, . = 빈 칸 (경기 밖, 그리지 않음).
    * 계단(S, s, d)과 지붕(R)은 알아보기 위한 글자이고 높이는 slopes에서 정한다
    */
   rows: string[]
+  /** 칸마다 바닥 높이 (층 단위). 있으면 heights 대신 쓴다 (실측 맵, D-072) */
+  cellHeights?: number[][]
   /** 층과 벽 윗면 높이. 맵마다 다르다 (D-019) */
   heights: Record<Floor | 'W', number>
   /** 1층 바닥판 밑면 */

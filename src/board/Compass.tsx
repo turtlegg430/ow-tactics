@@ -11,7 +11,8 @@ const ANGLE_TEXT: Record<number, string> = {
   180: '반대편에서 봄',
   270: '왼쪽으로 90° 돌림',
 }
-const K = 0.075 // 줄이는 배율. 시안 맵 크기에 맞춘 값 (viewBox와 함께)
+/** 줄이는 배율. 시안 맵(가로 14칸)에서 0.075가 되도록 맵 크기에 맞춘다 (viewBox와 함께) */
+const scaleFor = (t: Terrain) => 1.05 / Math.max(t.w, t.d)
 
 interface Props {
   terrain: Terrain
@@ -22,6 +23,7 @@ interface Props {
 
 export function Compass({ terrain, angle, settled }: Props) {
   const v = makeView(terrain.w, terrain.d, angle)
+  const K = scaleFor(terrain)
   const P = (x: number, y: number): [number, number] => {
     const p = iso(v, x, y, 0)
     return [p[0] * K, p[1] * K]

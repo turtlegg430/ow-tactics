@@ -21,6 +21,7 @@ export type Tile = TileBase &
     | { type: 'roof'; slope: Slope }
     | { type: 'fall' }
     | { type: 'struct' }
+    | { type: 'void' }
   )
 
 export interface Terrain {
@@ -50,8 +51,9 @@ export function buildTerrain(map: MapData): Terrain {
         const [hA, hB, hC, hD] = s.axis === 'x' ? [s.a, s.b, s.b, s.a] : [s.a, s.a, s.b, s.b]
         row.push({ type: s.roof ? 'roof' : 'stair', slope: s, hA, hB, hC, hD, bot: map.slab, fallRing: false })
       } else if (c === 'F') row.push({ type: 'fall', ...flat(map.fall) })
-      else if (c === 'W') row.push({ type: 'struct', ...flat(map.heights.W) })
-      else if (isFloor(c)) row.push({ type: 'floor', floor: c, ...flat(map.heights[c]) })
+      else if (c === 'W') row.push({ type: 'struct', ...flat(map.cellHeights?.[gy][gx] ?? map.heights.W) })
+      else if (c === '.') row.push({ type: 'void', ...flat(map.slab) })
+      else if (isFloor(c)) row.push({ type: 'floor', floor: c, ...flat(map.cellHeights?.[gy][gx] ?? map.heights[c]) })
       else throw new Error(`${map.id}: (${gx}, ${gy}) 칸의 '${c}'를 알 수 없음 (계단·지붕이면 slopes에 넣어야 함)`)
     }
     tiles.push(row)
@@ -62,6 +64,7 @@ export function buildTerrain(map: MapData): Terrain {
   for (let gy = 0; gy < d; gy++) {
     for (let gx = 0; gx < w; gx++) {
       const t = tiles[gy][gx]
+      if (t.type === 'void') continue
       if (t.type === 'fall') {
         t.bot = map.fall
         continue

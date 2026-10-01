@@ -55,13 +55,27 @@ export function Board({ terrain, angle, showLabels }: Props) {
 // 시안은 토큰 자리도 넣어 계산했지만 시안 맵에서는 결과가 같다 (토큰은 작업 4)
 function fitView(t: TerrainData): string {
   const [lo, hi] = heightRange(t)
+  // 그리는 칸(빈 칸 말고)을 감싸는 네모. 시안 맵은 빈 칸이 없어 맵 전체와 같다
+  let gx0 = t.w
+  let gx1 = 0
+  let gy0 = t.d
+  let gy1 = 0
+  t.tiles.forEach((row, gy) =>
+    row.forEach((tile, gx) => {
+      if (tile.type === 'void') return
+      gx0 = Math.min(gx0, gx)
+      gx1 = Math.max(gx1, gx + 1)
+      gy0 = Math.min(gy0, gy)
+      gy1 = Math.max(gy1, gy + 1)
+    }),
+  )
   let x0 = 1e9
   let x1 = -1e9
   let y0 = 1e9
   let y1 = -1e9
   for (let a = 0; a < 360; a += 15) {
     const v = makeView(t.w, t.d, a)
-    for (const [x, y] of [[0, 0], [t.w, 0], [t.w, t.d], [0, t.d]]) {
+    for (const [x, y] of [[gx0, gy0], [gx1, gy0], [gx1, gy1], [gx0, gy1]]) {
       for (const h of [hi, lo]) {
         const p = iso(v, x, y, h)
         x0 = Math.min(x0, p[0])
