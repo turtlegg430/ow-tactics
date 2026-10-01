@@ -14,15 +14,17 @@ interface Props {
   /** 보는 각도 (도). 0 = 기본 시점, 90 = 오른쪽으로 돌림 */
   angle: number
   showLabels: boolean
+  /** 벽을 반투명하게 (벽 안쪽을 보거나 고칠 때) */
+  ghostWalls?: boolean
 }
 
-export function Board({ terrain, angle, showLabels }: Props) {
+export function Board({ terrain, angle, showLabels, ghostWalls }: Props) {
   const viewBox = useMemo(() => fitView(terrain), [terrain])
   const view = useMemo(() => makeView(terrain.w, terrain.d, angle), [terrain, angle])
   return (
     <div className="frame">
       <svg
-        className={showLabels ? 'board' : 'board labels-off'}
+        className={'board' + (showLabels ? '' : ' labels-off') + (ghostWalls ? ' walls-ghost' : '')}
         viewBox={viewBox}
         preserveAspectRatio="xMidYMid meet"
         role="img"

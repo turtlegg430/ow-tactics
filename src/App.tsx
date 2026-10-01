@@ -11,12 +11,13 @@ import './App.css'
 const MAPS = [
   { map: sianDemo, note: 'P1 5차 시안의 가상 맵을 옮겨 온 보드예요. 배치는 보이는지 확인하려는 예시예요.' },
   { map: kingsRowAFloor, note: '왕의 길 A의 1층 바닥만 1m 칸으로 그린 첫 단계예요 (D-072). 벽·건물과 2층은 다음 단계에서 올라가요.' },
-  { map: kingsRowAWalls, note: '왕의 길 A의 1층에 벽 스캔으로 벽을 세운 단계예요 (D-072 6단계). 높이는 대강의 견적이고, 2층은 다음 단계에서 정해요.' },
+  { map: kingsRowAWalls, note: '왕의 길 A의 1층에 벽 스캔으로 벽을 세운 단계예요 (D-072 6단계). 벽 높이는 실제 크기라 높아요. 안쪽은 "벽 반투명"으로 보세요. 2층은 다음 단계에서 정해요.' },
 ]
 
 function App() {
   const { angle, settled, rotateBy } = useRotation()
   const [showLabels, setShowLabels] = useState(true)
+  const [ghostWalls, setGhostWalls] = useState(false)
   const [mapIndex, setMapIndex] = useState(0)
   // 칸 정보는 각도와 상관없어서 맵마다 한 번만 만든다
   const terrain = useMemo(() => buildTerrain(MAPS[mapIndex].map), [mapIndex])
@@ -28,7 +29,7 @@ function App() {
       </header>
 
       <div className="stage">
-        <Board terrain={terrain} angle={angle} showLabels={showLabels} />
+        <Board terrain={terrain} angle={angle} showLabels={showLabels} ghostWalls={ghostWalls} />
       </div>
 
       <aside className="side">
@@ -59,6 +60,10 @@ function App() {
           <label className="opt">
             <input type="checkbox" checked={showLabels} onChange={e => setShowLabels(e.target.checked)} />
             <span>지역 이름</span>
+          </label>
+          <label className="opt">
+            <input type="checkbox" checked={ghostWalls} onChange={e => setGhostWalls(e.target.checked)} />
+            <span>벽 반투명</span>
           </label>
         </section>
       </aside>

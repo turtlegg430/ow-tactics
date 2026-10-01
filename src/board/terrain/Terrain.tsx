@@ -121,9 +121,11 @@ function FlatFloor({ terrain, view, h }: Props & { h: number }) {
       ))}
       <path d={top} fill={FLOOR_COLORS.G} />
       {edges}
-      {walls.map(([gx, gy]) => (
-        <Tile key={'w' + gx + ',' + gy} terrain={terrain} view={view} gx={gx} gy={gy} />
-      ))}
+      <g data-layer="walls">
+        {walls.map(([gx, gy]) => (
+          <Tile key={'w' + gx + ',' + gy} terrain={terrain} view={view} gx={gx} gy={gy} />
+        ))}
+      </g>
     </g>
   )
 }

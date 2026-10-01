@@ -43,6 +43,7 @@
   text-anchor: middle;
 }
 .board.labels-off .maplabels { display: none; }
+.board.walls-ghost [data-layer='walls'] { opacity: 0.3; }
 
 /* 방향 표시 */
 .compass {
