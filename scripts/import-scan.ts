@@ -5,7 +5,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { MapData, ScanTerrain } from '../src/data/types.ts'
-import { readPng, type Png } from './png.ts'
+import { readPng, writePng, type Png } from './png.ts'
 
 /** 왕의 길 A 스캔 설정. 파일 이름은 기획 작업 폴더 '스캔\'에 있는 것 */
 const MAP = {
@@ -925,6 +925,49 @@ export const floor: MapData = {
 `
 }
 
+// ---------- 6-5. 비교 그림 (결과를 드릴 때마다 함께) ----------
+
+/** 비교 그림을 줄이는 배율 (StatBanana 그림 픽셀 몇 개가 비교 그림 1픽셀) */
+const COMPARE_SCALE = 2
+
+/**
+ * 1층 보드 비교 그림: 왼쪽은 StatBanana 그림, 오른쪽은 같은 그림 위에 1층 범위(연한 녹색)와 그 테두리(노랑).
+ * 그림의 흰 경계선과 노란 테두리를 맞대 보면 범위가 맞는지 보인다. 스캔 폴더 '미리보기'에만 쓴다 (저장소에 넣지 않음)
+ */
+function floorCompare(t: ScanTerrain, floor: MapData, img: Png, fit: Fit, file: string) {
+  const S = COMPARE_SCALE
+  const W = Math.floor(img.w / S)
+  const H = Math.floor(img.h / S)
+  const out = Buffer.alloc(W * 2 * H * 3)
+  const [kr, ki] = fit.k
+  const [tr, ti] = fit.t
+  const dd = kr * kr + ki * ki
+  const cell = floor.scale?.cellMeters ?? 1
+  // 그림 픽셀 → 게임 좌표 → 1층 보드 칸
+  const isFloor = (px: number, py: number) => {
+    const a = px - tr
+    const b = py + ti
+    const X = (-kr * a + ki * b) / dd
+    const Z = (-ki * a - kr * b) / dd
+    const bx = Math.floor((t.toGame.originX - X) / cell)
+    const by = Math.floor((t.toGame.originZ - Z) / cell)
+    return floor.rows[by]?.[bx] === 'G'
+  }
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const px = x * S + S / 2
+      const py = y * S + S / 2
+      const o = (Math.floor(py) * img.w + Math.floor(px)) * img.bpp
+      const rgb = [img.data[o], img.data[o + 1], img.data[o + 2]]
+      out.set(rgb, (y * W * 2 + x) * 3)
+      const inside = isFloor(px, py)
+      const edge = [[S, 0], [-S, 0], [0, S], [0, -S]].some(([dx, dy]) => isFloor(px + dx, py + dy) !== inside)
+      const mixed = edge ? [255, 214, 10] : inside ? rgb.map((v, i) => Math.round(v * 0.55 + [109, 143, 90][i] * 0.45)) : rgb
+      out.set(mixed, (y * W * 2 + W + x) * 3)
+    }
+  writePng(file, W * 2, H, out)
+}
+
 // ---------- 7. 파일 쓰기 ----------
 
 function terrainSource(t: ScanTerrain, csv: string[]) {
@@ -1039,7 +1082,8 @@ const cells = classify(grid)
 const seams = seamCheck(cells, grid, chunks)
 const fill = fillGaps(cells, grid.nx, grid.nz)
 const board = toBoard(cells, grid)
-const mask = playMask(board, readPng(path.join(dir, MAP.image)), fit)
+const image = readPng(path.join(dir, MAP.image))
+const mask = playMask(board, image, fit)
 const terrain: ScanTerrain = { ...board, play: mask.rows }
 
 // 찍은 곳(D-070)은 사용자가 서 본 곳이라 경기 구역에 넣는다. 경기 구역이 바뀌면 덩어리를 다시 만들어 한 번 더 적용한다
@@ -1142,5 +1186,8 @@ const data = JSON.stringify({ terrain, image: '../' + MAP.image, fit: { k: fit.k
 const template = fs.readFileSync(path.join(root, 'scripts/scan-preview.html'), 'utf8')
 fs.writeFileSync(htmlPath, template.replace('const DATA = __DATA__', () => 'const DATA = ' + data))
 lines.push(`겹쳐 보기: ${htmlPath}`)
+const comparePath = path.join(outDir, `${MAP.id}-1층-비교.png`)
+floorCompare(terrain, floor, image, fit, comparePath)
+lines.push(`1층 비교 그림: ${comparePath}`)
 
 console.log(lines.join('\n'))

@@ -1,5 +1,5 @@
-// PNG 그림 읽기. 경기 구역 마스크를 만들려고 StatBanana 그림의 픽셀을 읽는다.
-// 새 패키지 없이 Node에 들어 있는 zlib(압축 풀기)만 쓴다. 8비트, 비월 없는 PNG만 읽는다
+// PNG 그림 읽기·쓰기. 경기 구역 마스크를 만들려고 StatBanana 그림의 픽셀을 읽고, 비교 그림을 쓴다.
+// 새 패키지 없이 Node에 들어 있는 zlib(압축·압축 풀기)만 쓴다. 8비트, 비월 없는 PNG만 읽고, RGB PNG로 쓴다
 
 import fs from 'node:fs'
 import zlib from 'node:zlib'
@@ -61,4 +61,36 @@ export function readPng(file: string): Png {
     }
   }
   return { w, h, bpp, data }
+}
+
+// PNG 쓰기 (8비트 RGB). 겹쳐 보기 비교 그림을 만들 때 쓴다
+const crcTable = Array.from({ length: 256 }, (_, n) => {
+  let c = n
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+  return c >>> 0
+})
+function crc32(buf: Buffer) {
+  let c = 0xffffffff
+  for (const v of buf) c = crcTable[(c ^ v) & 255] ^ (c >>> 8)
+  return (c ^ 0xffffffff) >>> 0
+}
+function chunk(type: string, data: Buffer) {
+  const len = Buffer.alloc(4)
+  len.writeUInt32BE(data.length)
+  const body = Buffer.concat([Buffer.from(type, 'ascii'), data])
+  const crc = Buffer.alloc(4)
+  crc.writeUInt32BE(crc32(body))
+  return Buffer.concat([len, body, crc])
+}
+
+/** rgb: 왼쪽 위부터 한 줄씩, 픽셀마다 3바이트 */
+export function writePng(file: string, w: number, h: number, rgb: Buffer) {
+  const raw = Buffer.alloc(h * (w * 3 + 1))
+  for (let y = 0; y < h; y++) rgb.copy(raw, y * (w * 3 + 1) + 1, y * w * 3, (y + 1) * w * 3)
+  const head = Buffer.alloc(13)
+  head.writeUInt32BE(w, 0)
+  head.writeUInt32BE(h, 4)
+  head[8] = 8
+  head[9] = 2
+  fs.writeFileSync(file, Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', head), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]))
 }
