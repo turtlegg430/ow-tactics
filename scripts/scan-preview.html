@@ -40,9 +40,10 @@
   <label>투명도 <input type="range" id="alpha" min="0" max="100" value="55"></label>
   <label>확대 <input type="range" id="zoom" min="10" max="150" value="40"></label>
   <label>칠하는 면 <select id="which">
-    <option value="hi">가장 높은 설 수 있는 면</option>
     <option value="lo">가장 낮은 설 수 있는 면</option>
+    <option value="hi">가장 높은 설 수 있는 면</option>
   </select></label>
+  <p class="note">StatBanana 그림은 천장을 걷어 낸 바닥을 그려서 '가장 낮은'이 그림과 비교하기 좋다. '가장 높은'은 길 위 건물·지붕이 바닥을 덮는다</p>
   <label><input type="checkbox" id="showFloor" checked> 층 색</label>
   <label><input type="checkbox" id="showCover" checked> 덮임 빗금</label>
   <label><input type="checkbox" id="showFill" checked> 채움 표시</label>
@@ -181,10 +182,18 @@ function legend() {
   $('legend').insertAdjacentHTML('afterend', `<p class="note">층 경계 (초안): ${b.upper}m 미만 1층, ${b.upper}~${b.high}m 2층, ${b.high}m 이상 높은 곳</p>`);
 }
 
-function suspects() {
+// 수상한 곳의 네 모서리가 모두 그림 밖이면 사각형이 보이지 않는다
+function outsideImage(s, w, h) {
+  return [[s.x0, s.y0], [s.x1, s.y0], [s.x0, s.y1], [s.x1, s.y1]].every(([x, y]) => {
+    const p = M.transformPoint(new DOMPoint(gameX(x), gameZ(y)));
+    return p.x < 0 || p.y < 0 || p.x > w || p.y > h;
+  });
+}
+
+function suspects(w, h) {
   DATA.suspects.forEach((s, i) => {
     const li = document.createElement('li');
-    li.textContent = s.text;
+    li.textContent = s.text + (outsideImage(s, w, h) ? ' — 그림 밖이라 사각형이 안 보임' : '');
     li.onclick = () => {
       selected = i;
       document.querySelectorAll('#sus li').forEach((e, k) => e.classList.toggle('on', k === i));
@@ -200,12 +209,13 @@ function suspects() {
 
 function start(w, h) {
   cv.width = w; cv.height = h;
+  suspects(w, h);
   $('zoom').value = Math.max(10, Math.min(150, Math.floor(main.clientWidth / w * 100)));
   layout(); draw();
 }
 
 $('report').textContent = DATA.report;
-legend(); suspects();
+legend();
 for (const id of ['showFloor', 'showCover', 'showFill', 'showSus', 'which']) $(id).addEventListener('change', draw);
 for (const id of ['alpha', 'zoom']) $(id).addEventListener('input', layout);
 img.onload = () => start(img.naturalWidth, img.naturalHeight);
