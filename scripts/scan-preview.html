@@ -10,7 +10,7 @@
   * { box-sizing: border-box; }
   body { margin: 0; height: 100vh; display: flex; overflow: hidden; background: var(--bg); color: var(--text);
     font: 13px/1.5 system-ui, "Malgun Gothic", sans-serif; }
-  aside { width: 360px; flex: none; overflow: auto; padding: 14px 16px; background: var(--panel); border-right: 1px solid var(--line); }
+  aside { width: 380px; flex: none; overflow: auto; padding: 14px 16px; background: var(--panel); border-right: 1px solid var(--line); }
   main { flex: 1; overflow: auto; }
   h1 { font-size: 16px; margin: 0 0 4px; }
   h2 { font-size: 13px; margin: 18px 0 6px; color: var(--dim); }
@@ -18,16 +18,23 @@
   label { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
   label input[type=range] { flex: 1; }
   select { flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--line); padding: 2px; }
+  button { background: #2d2b34; color: var(--text); border: 1px solid #4a4752; border-radius: 4px; padding: 2px 8px; cursor: pointer; font: inherit; }
+  button:hover { background: #3a3842; }
+  button.on { background: #ffd60a; color: #111; border-color: #ffd60a; }
   .legend { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; align-items: center; }
   .sw { width: 16px; height: 12px; border: 1px solid #0006; }
-  #info { min-height: 140px; padding: 8px; background: var(--bg); border: 1px solid var(--line); white-space: pre-wrap; }
-  #review { padding-left: 22px; margin: 0; }
-  #review li { cursor: pointer; margin: 3px 0; }
-  #review li:hover, #review li.on { color: #ffd60a; }
+  #info { min-height: 90px; padding: 8px; background: var(--bg); border: 1px solid var(--line); white-space: pre-wrap; }
+  .pick { padding: 6px 8px; margin: 4px 0; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; }
+  .pick.sel { border-color: #ffd60a; }
+  .pick .row { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+  ol { padding-left: 22px; margin: 0; }
+  ol li { cursor: pointer; margin: 3px 0; }
+  ol li:hover, ol li.on { color: #ffd60a; }
   pre { font: 11px/1.4 Consolas, "D2Coding", monospace; white-space: pre-wrap; margin: 0; }
   .stack { position: relative; }
   .stack img, .stack canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
   #err { color: #ff453a; }
+  #saved { color: var(--dim); }
 </style>
 </head>
 <body>
@@ -40,24 +47,35 @@
   <label>투명도 <input type="range" id="alpha" min="0" max="100" value="55"></label>
   <label>확대 <input type="range" id="zoom" min="10" max="150" value="40"></label>
   <label>층 <select id="which">
+    <option value="judge">2층 판정 (면 덩어리)</option>
     <option value="lo">아래층 (밟는 면 중 가장 낮은 것)</option>
     <option value="hi">위층 (밟는 면 중 가장 높은 것)</option>
   </select></label>
-  <p class="note">밟는 면 = 경기 안 칸의 설 수 있는 면 중 9m 아래. 그 위는 길·방 위의 건물·지붕으로 보고 뺀다 (D-068)</p>
+  <p class="note">밟는 면 = 경기 안 칸의 설 수 있는 면 중 <span class="high"></span>m 아래. 그 위는 길·방 위의 건물·지붕으로 보고 뺀다 (D-068)</p>
   <label><input type="checkbox" id="showFloor" checked> 층 색</label>
-  <label><input type="checkbox" id="showTwo" checked> 위·아래 두 층인 곳 빗금</label>
-  <label><input type="checkbox" id="showFill" checked> 채움 표시</label>
-  <label><input type="checkbox" id="showReview" checked> 확인 대상 번호</label>
+  <label><input type="checkbox" id="showTwo"> 위·아래 두 층인 곳 빗금</label>
+  <label><input type="checkbox" id="showAuto"> 자동으로 뺀 면 보기 (작은 면·벽 위)</label>
+  <label><input type="checkbox" id="showNo"> '아님'으로 고른 면 보기</label>
+  <label><input type="checkbox" id="showFill"> 채움 표시</label>
+  <label><input type="checkbox" id="showReview"> 확인 대상 번호</label>
   <label><input type="checkbox" id="showOut"> 경기 밖도 칠하기</label>
 
   <h2>범례</h2>
   <div class="legend" id="legend"></div>
 
+  <h2>2층 판정 (D-069)</h2>
+  <p class="note">지도에서 칸을 누르면 그 자리의 면 덩어리가 위에서부터 나온다. 방 안 2층과 그 위 지붕처럼 겹친 곳은 따로따로 고른다. '아님'으로 고르면 그 아래 면이 보인다</p>
+  <div id="picks"><p class="note">칸을 눌러 보세요</p></div>
+  <p id="progress"></p>
+  <div class="row"><button id="save">판정 저장</button> <span id="saved"></span></div>
+  <p class="note">저장한 파일은 스캔 폴더에 <b class="lname"></b> 이름으로 두고 변환을 다시 돌리면 반영된다. 판정은 이 브라우저에도 자동으로 기억된다</p>
+  <h2>2층 후보 목록 (누르면 그 자리로)</h2>
+  <ol id="cands"></ol>
+
   <h2>칸 정보 (마우스를 올리면)</h2>
   <div id="info">-</div>
 
-  <h2>확인 대상 (누르면 그 자리로)</h2>
-  <p class="note">경기 안인데 밟는 면이 없거나(벽·건물 덩어리 또는 스캔이 바닥에 못 닿은 곳) 9m 아래 면이 3개 이상인 곳. 9칸보다 큰 덩어리만 번호를 붙였다</p>
+  <h2>확인 대상 (스캔이 바닥에 못 닿은 곳)</h2>
   <ol id="review"></ol>
 
   <h2>보고</h2>
@@ -68,11 +86,12 @@
 </main>
 <script>
 const DATA = __DATA__;
-const T = DATA.terrain;
-const COLORS = { G: '#6d8f5a', U: '#ece4cc', R: '#a8323a', O: '#55555c' };
+const T = DATA.terrain, REG = DATA.regions, NR = DATA.nodeRegion;
+const COLORS = { G: '#6d8f5a', U: '#ece4cc', R: '#a8323a', O: '#55555c', cand: '#e0a526', stair: '#9a9484', auto: '#9b6bc8', no: '#3a3a40' };
+const KIND = { low: '1층 높이', cand: '2층 후보', stair: '계단', small: '작은 면 (자동으로 뺌)', thin: '폭 1m 이하 (자동으로 뺌)' };
 const $ = id => document.getElementById(id);
 const cv = $('cv'), ctx = cv.getContext('2d'), img = $('img'), stack = $('stack'), main = $('main');
-let selected = -1;
+let selected = -1, selRegion = -1, pickCell = null;
 
 // 게임 좌표 (X, Z) → 그림 픽셀. 맞춤값 규칙: p = k × (−X + iZ) + t, 픽셀 = (p의 실수부, −p의 허수부)
 const [kr, ki] = DATA.fit.k, [tr, ti] = DATA.fit.t;
@@ -87,32 +106,77 @@ const m = hq => (hq * T.hUnit).toFixed(2) + 'm';
 const floorOf = hq => (hq * T.hUnit < T.floorBounds.upper ? 'G' : 'U');
 const PLAY = { i: '경기 안', o: '경기 밖', '?': 'StatBanana 그림 밖이라 모름' };
 
-/** 밟는 면: 설 수 있는 면 중 높은 곳 경계(9m) 아래 */
+/** 밟는 면: 설 수 있는 면 중 높은 곳 경계(floorBounds.high) 아래. 면 덩어리 번호(NR)도 이 순서 */
 const stand = (x, y) => T.walk[y][x].filter(hq => hq * T.hUnit < T.floorBounds.high);
 const odd = (x, y) => { const n = stand(x, y).length; return n === 0 || n >= 3; };
 
+// ----- 판정 -----
+// 덩어리마다 칸 목록
+const regionCells = REG.map(() => []);
+NR.forEach((ks, c) => ks.forEach(k => regionCells[k].push(c)));
+/** 덩어리 번호 → '2층' | '아님' | '계단' (사용자가 고른 것) */
+const labels = new Map();
+const STORE = 'ow-tactics-labels-' + T.id;
+function findRegion(l) {
+  const c = l.y * T.w + l.x, s = stand(l.x, l.y), i = s.findIndex(h => Math.abs(h - l.hq) <= 1);
+  return i < 0 ? -1 : NR[c][i];
+}
+function loadLabels() {
+  let list = DATA.labels;
+  try { const s = localStorage.getItem(STORE); if (s) list = JSON.parse(s); } catch (e) { /* 저장소를 못 쓰면 파일 판정만 */ }
+  for (const l of list) { const k = findRegion(l); if (k >= 0) labels.set(k, l.label); }
+}
+const labelList = () => [...labels].map(([k, label]) => ({ x: REG[k].x, y: REG[k].y, hq: REG[k].hq, label }));
+function remember() { try { localStorage.setItem(STORE, JSON.stringify(labelList())); } catch (e) { /* 무시 */ } }
+/** 덩어리의 지금 판정: 사용자가 고른 것, 없으면 종류에 따른 기본값 */
+function stateOf(k) {
+  if (labels.has(k)) return labels.get(k);
+  return { low: '1층', cand: '미정', stair: '계단', small: '자동 아님', thin: '자동 아님' }[REG[k].kind];
+}
+const STATE_COLOR = { '1층': COLORS.G, '2층': COLORS.U, '미정': COLORS.cand, '계단': COLORS.stair };
+
 function cellColor(x, y) {
   const p = T.play[y][x];
-  if (p !== 'i') return $('showOut').checked && T.floor[y][x] !== '.' ? 'O' : null;
+  if (p !== 'i') return $('showOut').checked && T.floor[y][x] !== '.' ? COLORS.O : null;
   const s = stand(x, y);
-  if (odd(x, y)) return 'R';
-  return floorOf($('which').value === 'lo' ? s[s.length - 1] : s[0]);
+  if (odd(x, y) && $('which').value !== 'judge') return COLORS.R;
+  if ($('which').value === 'judge') {
+    if (!s.length) return COLORS.R;
+    const ks = NR[y * T.w + x];
+    for (const k of ks) { const c = STATE_COLOR[stateOf(k)]; if (c) return c; }
+    return null;
+  }
+  return COLORS[floorOf($('which').value === 'lo' ? s[s.length - 1] : s[0])];
+}
+
+function cellRect(p, x, y, e) {
+  const X = gameX(x + 0.5), Z = gameZ(y + 0.5);
+  p.rect(X - e, Z - e, 2 * e, 2 * e);
 }
 
 function draw() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, cv.width, cv.height);
   ctx.setTransform(M);
-  const h = T.cell / 2;
+  const h = T.cell / 2, judge = $('which').value === 'judge';
   if ($('showFloor').checked) {
     const paths = {};
     for (let y = 0; y < T.d; y++) for (let x = 0; x < T.w; x++) {
       const c = cellColor(x, y);
-      if (!c) continue;
-      const X = gameX(x + 0.5), Z = gameZ(y + 0.5), e = h * 1.04;
-      (paths[c] = paths[c] || new Path2D()).rect(X - e, Z - e, 2 * e, 2 * e);
+      if (c) cellRect(paths[c] = paths[c] || new Path2D(), x, y, h * 1.04);
     }
-    for (const c in paths) { ctx.fillStyle = COLORS[c]; ctx.fill(paths[c]); }
+    for (const c in paths) { ctx.fillStyle = c; ctx.fill(paths[c]); }
+  }
+  // 판정 보기에서 자동으로 뺀 면, '아님'으로 고른 면
+  if (judge && ($('showAuto').checked || $('showNo').checked)) {
+    const auto = new Path2D(), no = new Path2D();
+    REG.forEach((r, k) => {
+      const st = stateOf(k);
+      const p = st === '자동 아님' && $('showAuto').checked ? auto : st === '아님' && $('showNo').checked ? no : null;
+      if (p) for (const c of regionCells[k]) cellRect(p, c % T.w, Math.floor(c / T.w), h * 0.7);
+    });
+    ctx.fillStyle = COLORS.auto; ctx.fill(auto);
+    ctx.fillStyle = COLORS.no; ctx.fill(no);
   }
   if ($('showTwo').checked) {
     const p = new Path2D();
@@ -132,6 +196,17 @@ function draw() {
       p.moveTo(X + 0.14, Z); p.arc(X, Z, 0.14, 0, Math.PI * 2);
     }
     ctx.fillStyle = '#ff4fd8'; ctx.fill(p);
+  }
+  // 고른 덩어리
+  if (selRegion >= 0) {
+    const p = new Path2D();
+    for (const c of regionCells[selRegion]) cellRect(p, c % T.w, Math.floor(c / T.w), h);
+    ctx.fillStyle = 'rgba(255, 214, 10, 0.45)'; ctx.fill(p);
+  }
+  if (pickCell) {
+    ctx.strokeStyle = '#00c8ff'; ctx.lineWidth = 0.12;
+    const X = gameX(pickCell.x + 0.5), Z = gameZ(pickCell.y + 0.5);
+    ctx.strokeRect(X - h, Z - h, 2 * h, 2 * h);
   }
   if ($('showReview').checked) {
     DATA.review.forEach((s, i) => {
@@ -164,6 +239,12 @@ function cellAt(ev) {
   return x >= 0 && y >= 0 && x < T.w && y < T.d ? { x, y } : null;
 }
 
+function scrollToCell(x, y) {
+  const c = M.transformPoint(new DOMPoint(gameX(x + 0.5), gameZ(y + 0.5)));
+  const z = $('zoom').value / 100;
+  main.scrollTo({ left: c.x * z - main.clientWidth / 2, top: c.y * z - main.clientHeight / 2, behavior: 'smooth' });
+}
+
 cv.addEventListener('mousemove', ev => {
   const c = cellAt(ev);
   if (!c) { $('info').textContent = '스캔 범위 밖'; return; }
@@ -172,22 +253,98 @@ cv.addEventListener('mousemove', ev => {
   $('info').textContent = [
     `보드 칸 [${x}, ${y}]   게임 X ${gameX(x + 0.5).toFixed(2)}, Z ${gameZ(y + 0.5).toFixed(2)}`,
     PLAY[T.play[y][x]],
-    T.play[y][x] === 'i' ? `밟는 면: ${s.length ? s.map(v => `${m(v)} (${floorOf(v) === 'G' ? '1층' : '2층'})`).join(', ') : '없음'}` : '',
+    T.play[y][x] === 'i' ? `밟는 면: ${s.length ? s.map((v, i) => `${m(v)} (${stateOf(NR[y * T.w + x][i])})`).join(', ') : '없음'}` : '',
     `설 수 있는 면 전체: ${w.length ? w.map(m).join(', ') : '없음'}`,
     top === null ? '맨 위 면: 없음' : `맨 위 면: ${m(top)} (법선 y ${(T.topN[y][x] / 99).toFixed(2)})`,
     f === 'f' || f === 'F' ? '채움 (이웃 값으로 채운 칸)' : '',
   ].filter(Boolean).join('\n');
 });
 
+// 누르기: 그 칸의 면 덩어리를 위에서부터 보여 주고 판정 단추를 단다
+cv.addEventListener('click', ev => {
+  const c = cellAt(ev);
+  if (!c || T.play[c.y][c.x] !== 'i') return;
+  pickCell = c;
+  const ks = NR[c.y * T.w + c.x];
+  selRegion = ks.find(k => REG[k].kind !== 'low') ?? ks[0] ?? -1;
+  showPicks();
+  draw();
+});
+
+function showPicks() {
+  const box = $('picks');
+  box.innerHTML = '';
+  if (!pickCell) return;
+  const { x, y } = pickCell, ks = NR[y * T.w + x], s = stand(x, y);
+  if (!ks.length) { box.innerHTML = '<p class="note">이 칸에는 밟는 면이 없다 (스캔이 바닥에 못 닿은 곳일 수 있음)</p>'; return; }
+  ks.forEach((k, i) => {
+    const r = REG[k], st = stateOf(k), div = document.createElement('div');
+    div.className = 'pick' + (k === selRegion ? ' sel' : '');
+    const cover = r.covered >= 0.5 ? `위에 지붕·위층이 있음 (${Math.round(r.covered * 100)}%)` : `위가 트임 (덮임 ${Math.round(r.covered * 100)}%)`;
+    div.innerHTML = `<b>${i + 1}. ${m(s[i])}</b> · ${KIND[r.kind]} · ${r.cells}칸 (${(r.cells * T.cell * T.cell).toFixed(0)}㎡)<br><span class="note">${cover} · 지금: ${st}</span>`;
+    div.onmouseenter = () => { selRegion = k; draw(); };
+    const row = document.createElement('div');
+    row.className = 'row';
+    for (const [text, value] of [['2층', '2층'], ['아님', '아님'], ['계단', '계단'], ['되돌리기', null]]) {
+      const b = document.createElement('button');
+      b.textContent = text;
+      if (value && labels.get(k) === value) b.className = 'on';
+      b.onclick = () => { if (value) labels.set(k, value); else labels.delete(k); remember(); selRegion = k; showPicks(); progress(); draw(); };
+      row.appendChild(b);
+    }
+    div.appendChild(row);
+    box.appendChild(div);
+  });
+}
+
+function progress() {
+  const cands = REG.map((r, k) => k).filter(k => REG[k].kind === 'cand');
+  const n = v => cands.filter(k => labels.get(k) === v).length;
+  $('progress').textContent = `2층 후보 ${cands.length}곳: 2층 ${n('2층')}, 아님 ${n('아님')}, 계단 ${n('계단')}, 미정 ${cands.length - n('2층') - n('아님') - n('계단')}` +
+    (labels.size ? ` · 그 밖에 바꾼 덩어리 ${[...labels.keys()].filter(k => REG[k].kind !== 'cand').length}곳` : '');
+  const ol = $('cands');
+  ol.innerHTML = '';
+  cands.sort((a, b) => REG[b].cells - REG[a].cells).forEach(k => {
+    const r = REG[k], li = document.createElement('li');
+    li.textContent = `${m(r.mid)} · ${r.cells}칸 · ${r.covered >= 0.5 ? '덮임' : '트임'} — ${stateOf(k)}`;
+    li.onclick = () => { pickCell = { x: r.x, y: r.y }; selRegion = k; showPicks(); draw(); scrollToCell(r.x, r.y); };
+    ol.appendChild(li);
+  });
+}
+
+async function save() {
+  const text = JSON.stringify({ version: 1, regions: labelList() }, null, 1);
+  if (window.showSaveFilePicker) {
+    try {
+      const fh = await window.showSaveFilePicker({ suggestedName: DATA.labelsName, types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }] });
+      const w = await fh.createWritable(); await w.write(text); await w.close();
+      $('saved').textContent = `저장함 (${labels.size}개)`;
+      return;
+    } catch (e) { if (e.name === 'AbortError') return; }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  a.download = DATA.labelsName;
+  a.click();
+  $('saved').textContent = `내려받음 (${labels.size}개). 스캔 폴더로 옮겨 주세요`;
+}
+
 function legend() {
-  const rows = [
+  const judge = $('which').value === 'judge';
+  const rows = (judge ? [
+    [COLORS.G, `1층 (${T.floorBounds.upper}m 미만)`],
+    [COLORS.U, '2층 (판정함)'],
+    [COLORS.cand, '2층 후보 (미정)'],
+    [COLORS.stair, '계단'],
+    [COLORS.R, '밟는 면 없음 (스캔이 바닥에 못 닿음)'],
+    [COLORS.auto, '자동으로 뺀 면 (켰을 때)'],
+    [COLORS.no, "'아님'으로 고른 면 (켰을 때)"],
+  ] : [
     [COLORS.G, `1층 (${T.floorBounds.upper}m 미만)`],
     [COLORS.U, `2층 (${T.floorBounds.upper}~${T.floorBounds.high}m)`],
     [COLORS.R, '확인 대상: 밟는 면이 없거나 3개 이상'],
-    [COLORS.O, '경기 밖 (켰을 때만)'],
-  ].map(([c, n]) => `<span class="sw" style="background:${c}"></span><span>${n}</span>`);
-  rows.push('<span class="sw" style="background:repeating-linear-gradient(45deg,#6d8f5a 0 3px,#141218 3px 4px)"></span><span>위·아래 두 층 (예: 2층 바닥 밑 1층, 버스 위와 길)</span>');
-  rows.push('<span class="sw" style="background:radial-gradient(#ff4fd8 40%,transparent 45%)"></span><span>채움: 빈틈·가로등·나무 자리를 이웃 값으로</span>');
+  ]).map(([c, n]) => `<span class="sw" style="background:${c}"></span><span>${n}</span>`);
+  rows.push(`<span class="sw" style="background:${COLORS.O}"></span><span>경기 밖 (켰을 때만)</span>`);
   $('legend').innerHTML = rows.join('');
 }
 
@@ -200,9 +357,7 @@ function review() {
       document.querySelectorAll('#review li').forEach((e, k) => e.classList.toggle('on', k === i));
       $('showReview').checked = true;
       draw();
-      const c = M.transformPoint(new DOMPoint(gameX((s.x0 + s.x1) / 2), gameZ((s.y0 + s.y1) / 2)));
-      const z = $('zoom').value / 100;
-      main.scrollTo({ left: c.x * z - main.clientWidth / 2, top: c.y * z - main.clientHeight / 2, behavior: 'smooth' });
+      scrollToCell((s.x0 + s.x1) / 2, (s.y0 + s.y1) / 2);
     };
     $('review').appendChild(li);
   });
@@ -215,8 +370,12 @@ function start(w, h) {
 }
 
 $('report').textContent = DATA.report;
-legend(); review();
-for (const id of ['showFloor', 'showTwo', 'showFill', 'showReview', 'showOut', 'which']) $(id).addEventListener('change', draw);
+document.querySelectorAll('.high').forEach(e => { e.textContent = T.floorBounds.high; });
+document.querySelectorAll('.lname').forEach(e => { e.textContent = DATA.labelsName; });
+loadLabels(); legend(); review(); progress();
+$('save').onclick = save;
+for (const id of ['showFloor', 'showTwo', 'showAuto', 'showNo', 'showFill', 'showReview', 'showOut']) $(id).addEventListener('change', draw);
+$('which').addEventListener('change', () => { legend(); draw(); });
 for (const id of ['alpha', 'zoom']) $(id).addEventListener('input', layout);
 img.onload = () => start(img.naturalWidth, img.naturalHeight);
 img.onerror = () => { $('err').textContent = `바탕 그림 ${DATA.image}을 찾지 못했어요. 칸만 그립니다.`; start(2441, 2658); };

@@ -16,7 +16,7 @@ const MAP = {
   fit: 'kingsrow_plain-맞춤값.json',
   out: 'src/data/maps/kings-row-a/terrain.ts',
   /** 층 경계 (m). 초안이며 P3 작업 3에서 사용자가 확정한다 (D-063) */
-  floorBounds: { upper: 3.5, high: 9 },
+  floorBounds: { upper: 3.5, high: 10 },
 }
 
 /** 설 수 있는 면: 법선 y가 이 값 이상이고, 바로 위 면까지 이만큼(m) 비어 있어야 한다 (D-062) */
@@ -479,10 +479,11 @@ function playMask(t: Omit<ScanTerrain, 'play'>, img: Png, fit: Fit) {
       reverted += comp.length
     }
   }
-  // 칸 가운데 픽셀로 판정
+  // 칸 가운데 픽셀로 판정. 흰 선(두껍게 한 것) 위에 있는 칸은 면 덩어리를 나누는 데 쓴다
   const [kr, ki] = fit.k
   const [tr, ti] = fit.t
   const rows: string[] = []
+  const onLine = new Uint8Array(t.w * t.d)
   for (let y = 0; y < t.d; y++) {
     let row = ''
     for (let x = 0; x < t.w; x++) {
@@ -490,11 +491,194 @@ function playMask(t: Omit<ScanTerrain, 'play'>, img: Png, fit: Fit) {
       const Z = t.toGame.originZ - (y + 0.5) * t.cell
       const px = Math.round(-kr * X - ki * Z + tr)
       const py = Math.round(ki * X - kr * Z - ti)
-      row += px < 0 || py < 0 || px >= w || py >= h ? '?' : out[py * w + px] ? 'o' : 'i'
+      const inside = px >= 0 && py >= 0 && px < w && py < h
+      row += !inside ? '?' : out[py * w + px] ? 'o' : 'i'
+      if (inside && line[py * w + px]) onLine[y * t.w + x] = 1
     }
     rows.push(row)
   }
-  return { rows, revertedPx: reverted }
+  return { rows, onLine, revertedPx: reverted }
+}
+
+// ---------- 6-2. 면 덩어리와 2층 판정 (D-069) ----------
+
+/** 같은 면으로 이을 높이 차 (m) */
+const FLAT_TOL = 0.1
+/** 계단으로 이을 한 칸 높이 차 (m) */
+const STEP_TOL = 0.6
+/** 이보다 작은 위층 덩어리는 자동으로 '2층 아님' (물체 위·벽 위) */
+const MIN_REGION_CELLS = 8
+
+/**
+ * 면 덩어리의 종류.
+ * low = 1층 높이, cand = 2층 후보 (사용자가 판정), stair = 계단,
+ * small·thin = 자동으로 2층 아님 (작음, 폭 1m 이하. 물체 위·벽 위·비탈 지붕 조각)
+ */
+type RegionKind = 'low' | 'cand' | 'stair' | 'small' | 'thin'
+
+interface Region {
+  /** 덩어리를 대표하는 칸과 높이. 판정 파일에서 덩어리를 찾는 열쇠 */
+  x: number
+  y: number
+  hq: number
+  /** 가운데 높이 (5cm 단위) */
+  mid: number
+  cells: number
+  kind: RegionKind
+  /** 위에 다른 면(지붕·위층)이 덮인 칸의 비율 */
+  covered: number
+}
+
+/** 사용자 판정 파일 (스캔 폴더의 <맵 id>-판정.json) */
+interface Labels {
+  version: 1
+  /** 덩어리 안의 한 칸과 그 높이(5cm 단위)로 덩어리를 가리킨다 */
+  regions: { x: number; y: number; hq: number; label: '2층' | '아님' | '계단' }[]
+}
+
+/**
+ * 경기 안 칸의 밟는 면(높은 곳 경계 아래)을 면 덩어리로 묶는다.
+ * 이웃 칸(4방향)의 면끼리 높이 차가 FLAT_TOL 이하면 같은 덩어리. StatBanana 흰 선 위 칸은 건너서 잇지 않는다.
+ * nodeRegion[칸]은 그 칸 밟는 면 각각의 덩어리 번호 (밟는 면 순서 = walk 순서)
+ */
+function buildRegions(t: ScanTerrain, onLine: Uint8Array) {
+  const n = t.w * t.d
+  const stand: number[][] = []
+  for (let c = 0; c < n; c++) {
+    const x = c % t.w
+    const y = (c - x) / t.w
+    stand.push(t.play[y][x] === 'i' ? t.walk[y][x].filter(hq => hq * t.hUnit < t.floorBounds.high) : [])
+  }
+  // 면 하나 = (칸, 몇 번째 면). 번호를 매겨 합치기(union-find)로 묶는다
+  const base: number[] = []
+  let total = 0
+  for (let c = 0; c < n; c++) {
+    base.push(total)
+    total += stand[c].length
+  }
+  const parent = Int32Array.from({ length: total }, (_, i) => i)
+  const find = (a: number): number => {
+    while (parent[a] !== a) {
+      parent[a] = parent[parent[a]]
+      a = parent[a]
+    }
+    return a
+  }
+  const join = (a: number, b: number) => {
+    const ra = find(a)
+    const rb = find(b)
+    if (ra !== rb) parent[Math.max(ra, rb)] = Math.min(ra, rb)
+  }
+  const flat = Math.round(FLAT_TOL / t.hUnit)
+  const near = (c: number, d: number, tol: number, each: (a: number, b: number) => void) => {
+    stand[c].forEach((ha, i) => stand[d].forEach((hb, j) => Math.abs(ha - hb) <= tol && each(base[c] + i, base[d] + j)))
+  }
+  for (let c = 0; c < n; c++) {
+    const x = c % t.w
+    for (const d of [x < t.w - 1 ? c + 1 : -1, c + t.w < n ? c + t.w : -1]) {
+      if (d >= 0 && !onLine[c] && !onLine[d]) near(c, d, flat, join)
+    }
+  }
+  // 흰 선 위 칸은 이웃 중 높이가 맞는 가장 큰 덩어리에 붙인다
+  const size = new Map<number, number>()
+  for (let i = 0; i < total; i++) size.set(find(i), (size.get(find(i)) ?? 0) + 1)
+  for (let c = 0; c < n; c++) {
+    if (!onLine[c]) continue
+    const x = c % t.w
+    stand[c].forEach((h, i) => {
+      let best = -1
+      for (const d of [x > 0 ? c - 1 : -1, x < t.w - 1 ? c + 1 : -1, c - t.w, c + t.w]) {
+        if (d < 0 || d >= n || onLine[d]) continue
+        stand[d].forEach((hd, j) => {
+          const r = find(base[d] + j)
+          if (Math.abs(h - hd) <= flat && (best < 0 || size.get(r)! > size.get(best)!)) best = r
+        })
+      }
+      if (best >= 0) join(base[c] + i, best)
+    })
+  }
+
+  // 덩어리마다 정보를 모은다
+  const id = new Map<number, number>()
+  const regions: (Region & { nodes: number[] })[] = []
+  const nodeRegion: number[][] = stand.map(s => s.map(() => -1))
+  for (let c = 0; c < n; c++) {
+    stand[c].forEach((h, i) => {
+      const r = find(base[c] + i)
+      if (!id.has(r)) {
+        id.set(r, regions.length)
+        regions.push({ x: c % t.w, y: Math.floor(c / t.w), hq: h, mid: 0, cells: 0, kind: 'low', covered: 0, nodes: [] })
+      }
+      const k = id.get(r)!
+      regions[k].nodes.push(c)
+      nodeRegion[c][i] = k
+    })
+  }
+  const upper = Math.round(t.floorBounds.upper / t.hUnit)
+  for (const [k, g] of regions.entries()) {
+    const hs = g.nodes.map(c => stand[c][nodeRegion[c].indexOf(k)])
+    g.mid = median(hs)
+    g.cells = g.nodes.length
+    g.covered = g.nodes.filter((c, i) => t.top[Math.floor(c / t.w)][c % t.w]! > hs[i] + 2).length / g.cells
+    const inRegion = new Set(g.nodes)
+    // 한 번 깎아서(4방향 이웃이 모두 덩어리 안인 칸만 남기기) 아무것도 안 남으면 폭 1m 이하
+    const core = g.nodes.some(c => [c - 1, c + 1, c - t.w, c + t.w].every(d => inRegion.has(d)))
+    g.kind = g.mid < upper ? 'low' : g.cells < MIN_REGION_CELLS ? 'small' : !core ? 'thin' : 'cand'
+  }
+
+  // 계단: 큰 덩어리(1층 바닥, 2층 후보)가 아닌 면 중에서, 1층 바닥에서 한 칸에 STEP_TOL 이하로 올라가며 닿고
+  // 2층 후보에서 한 칸에 STEP_TOL 이하로 내려가며도 닿는 면. 연석처럼 한쪽에서만 닿는 면은 계단이 아니다
+  const big = (k: number) => regions[k].kind === 'cand' || (regions[k].kind === 'low' && regions[k].cells >= MIN_REGION_CELLS * 4)
+  const step = Math.round(STEP_TOL / t.hUnit)
+  const reach = (from: (k: number) => boolean, up: boolean) => {
+    const seen = new Uint8Array(total)
+    const queue: number[] = []
+    for (let c = 0; c < n; c++) stand[c].forEach((_, i) => from(nodeRegion[c][i]) && queue.push(base[c] + i))
+    const cellOf: number[] = []
+    for (let c = 0; c < n; c++) stand[c].forEach(() => cellOf.push(c))
+    for (let q = 0; q < queue.length; q++) {
+      const a = queue[q]
+      const c = cellOf[a]
+      const ha = stand[c][a - base[c]]
+      const x = c % t.w
+      for (const d of [x > 0 ? c - 1 : -1, x < t.w - 1 ? c + 1 : -1, c - t.w, c + t.w]) {
+        if (d < 0 || d >= n) continue
+        stand[d].forEach((hb, j) => {
+          const b = base[d] + j
+          const rise = up ? hb - ha : ha - hb
+          if (!seen[b] && !big(nodeRegion[d][j]) && rise >= -flat && rise <= step) {
+            seen[b] = 1
+            queue.push(b)
+          }
+        })
+      }
+    }
+    return seen
+  }
+  const fromLow = reach(k => big(k) && regions[k].kind === 'low', true)
+  const fromHigh = reach(k => regions[k].kind === 'cand', false)
+  const stairNodes = new Map<number, number>()
+  for (let c = 0; c < n; c++) {
+    stand[c].forEach((_, i) => {
+      const a = base[c] + i
+      if (fromLow[a] && fromHigh[a]) stairNodes.set(nodeRegion[c][i], (stairNodes.get(nodeRegion[c][i]) ?? 0) + 1)
+    })
+  }
+  for (const [k, m] of stairNodes) if (m * 2 >= regions[k].cells && !big(k)) regions[k].kind = 'stair'
+  return { regions, nodeRegion, stand }
+}
+
+/** 판정 파일의 칸·높이를 덩어리 번호로 바꾼다. 못 찾은 판정은 따로 센다 */
+function applyLabels(t: ScanTerrain, built: ReturnType<typeof buildRegions>, labels: Labels | null) {
+  const out = new Map<number, Labels['regions'][number]['label']>()
+  let lost = 0
+  for (const l of labels?.regions ?? []) {
+    const c = l.y * t.w + l.x
+    const i = built.stand[c]?.findIndex(h => Math.abs(h - l.hq) <= 1) ?? -1
+    if (i < 0) lost++
+    else out.set(built.nodeRegion[c][i], l.label)
+  }
+  return { label: out, lost }
 }
 
 // ---------- 7. 파일 쓰기 ----------
@@ -570,7 +754,7 @@ function reviewGroups(t: ScanTerrain) {
       const xs = k.map(c => c % t.w)
       const ys = k.map(c => Math.floor(c / t.w))
       const none = k.filter((_, i) => standOf(t, xs[i], ys[i]).length === 0).length
-      const what = [none && `밟는 면 없음 ${none}칸`, k.length - none && `9m 아래 면 3개 이상 ${k.length - none}칸`].filter(Boolean).join(', ')
+      const what = [none && `밟는 면 없음 ${none}칸`, k.length - none && `${t.floorBounds.high}m 아래 면 3개 이상 ${k.length - none}칸`].filter(Boolean).join(', ')
       return { text: what, x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs) + 1, y1: Math.max(...ys) + 1 }
     })
   return { groups, smallGroups: small.length, smallCells: small.reduce((a, k) => a + k.length, 0) }
@@ -642,6 +826,15 @@ for (let y = 0; y < terrain.d; y++)
   }
 const table = heightTable(terrain)
 const review = reviewGroups(terrain)
+// 면 덩어리와 사용자 판정 (판정 파일은 겹쳐 보기에서 저장한다)
+const built = buildRegions(terrain, mask.onLine)
+const labelsName = `${MAP.id}-판정.json`
+const labelsPath = path.join(dir, labelsName)
+const labelsFile = fs.existsSync(labelsPath) ? (JSON.parse(fs.readFileSync(labelsPath, 'utf8')) as Labels) : null
+const applied = applyLabels(terrain, built, labelsFile)
+const kinds = (k: RegionKind) => built.regions.filter(r => r.kind === k)
+const cands = kinds('cand')
+const decided = (l: string) => cands.filter(r => applied.label.get(built.regions.indexOf(r)) === l).length
 
 const lines = [
   `격자 ${terrain.w} × ${terrain.d}칸 (칸 ${terrain.cell}m), 게임 X ${grid.x0}~${grid.x0 + (grid.nx - 1) * grid.step}, Z ${grid.z0}~${grid.z0 + (grid.nz - 1) * grid.step}`,
@@ -661,6 +854,9 @@ const lines = [
   '높이            맨 위   전체',
   ...table.map(r => `${r.label.padEnd(14)} ${String(r.first).padStart(6)} ${String(r.all).padStart(6)} ${r.edge ? '◀' : ' '} ${r.bar}`),
   '',
+  `면 덩어리 (D-069): 2층 후보 ${cands.length}곳 ${cands.reduce((a, r) => a + r.cells, 0)}칸, 계단 ${kinds('stair').length}곳, 자동으로 2층 아님 ${kinds('small').length + kinds('thin').length}곳 (작음 ${kinds('small').length}, 폭 1m 이하 ${kinds('thin').length})`,
+  `판정 파일 ${labelsName}: ${labelsFile ? `판정 ${labelsFile.regions.length}개${applied.lost ? `, 지금 데이터에서 못 찾은 판정 ${applied.lost}개` : ''}. 2층 후보 중 2층 ${decided('2층')}, 아님 ${decided('아님')}, 미정 ${cands.length - decided('2층') - decided('아님')}` : '아직 없음 (겹쳐 보기에서 판정하고 저장하면 생김)'}`,
+  '',
   `확인 대상 ${review.groups.length}곳 (경기 안인데 밟는 면이 없거나 3개 이상, ${GAP_MAX_CELLS}칸보다 큰 덩어리). 작은 덩어리 ${review.smallGroups}곳 ${review.smallCells}칸은 번호 없이 색만`,
   ...review.groups.map((s, i) => `${i + 1}. ${s.text}, 보드 x ${s.x0}~${s.x1} y ${s.y0}~${s.y1}`),
   '',
@@ -673,7 +869,8 @@ const lines = [
 const outDir = path.join(dir, '미리보기')
 fs.mkdirSync(outDir, { recursive: true })
 const htmlPath = path.join(outDir, `${MAP.id}-겹쳐보기.html`)
-const data = JSON.stringify({ terrain, image: '../' + MAP.image, fit: { k: fit.k, t: fit.t }, report: lines.join('\n'), review: review.groups })
+const data = JSON.stringify({ terrain, image: '../' + MAP.image, fit: { k: fit.k, t: fit.t }, report: lines.join('\n'), review: review.groups,
+  regions: built.regions.map(r => ({ x: r.x, y: r.y, hq: r.hq, mid: r.mid, cells: r.cells, kind: r.kind, covered: r.covered })), nodeRegion: built.nodeRegion, labels: labelsFile?.regions ?? [], labelsName })
 const template = fs.readFileSync(path.join(root, 'scripts/scan-preview.html'), 'utf8')
 fs.writeFileSync(htmlPath, template.replace('const DATA = __DATA__', () => 'const DATA = ' + data))
 lines.push(`겹쳐 보기: ${htmlPath}`)
