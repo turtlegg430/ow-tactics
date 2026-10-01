@@ -1,0 +1,156 @@
+variables
+{
+	global:
+		0: Row
+
+	player:
+		0: A
+		1: B
+		2: Corners
+		3: Scanning
+		4: Step
+		5: X0
+		6: Z0
+		7: NX
+		8: NZ
+		9: YTop
+		10: YBot
+		11: I
+		12: J
+		13: K
+		14: Px
+		15: Pz
+		16: YFrom
+		17: HitPos
+		18: Temp
+		19: Layers
+		20: Done
+		21: Code
+		22: Dir
+		23: Dx
+		24: Dz
+		25: Heights
+		26: Dist
+		27: Digit
+}
+
+rule("Scanner: setup")
+{
+	event
+	{
+		Ongoing - Global;
+	}
+
+	actions
+	{
+		Disable Built-In Game Mode Completion;
+		Disable Inspector Recording;
+	}
+}
+
+rule("Scanner: pause match time")
+{
+	event
+	{
+		Ongoing - Global;
+	}
+
+	conditions
+	{
+		Is Game In Progress == True;
+	}
+
+	actions
+	{
+		Pause Match Time;
+	}
+}
+
+rule("Scanner: player HUD")
+{
+	event
+	{
+		Ongoing - Each Player;
+		All;
+		All;
+	}
+
+	actions
+	{
+		Event Player.Done = False;
+		Event Player.Scanning = False;
+		Event Player.J = 0;
+		Event Player.NZ = 88;
+		Create HUD Text(Event Player, Custom String("OW-TACTICS WALL SCANNER v7 - KINGS ROW A"), Custom String("Crouch + F: start scan"), Null, Left, 0, Color(Yellow), Color(White), Color(White), Visible To and String, Default Visibility);
+		Create HUD Text(Event Player, Null, Null, Custom String("Pos {0}", Position Of(Event Player)), Left, 1, Color(White), Color(White), Color(White), Visible To and String, Default Visibility);
+		Create HUD Text(Event Player, Null, Null, Custom String("Row {0} / {1}   Scanning {2}", Event Player.J, Event Player.NZ, Event Player.Scanning), Left, 2, Color(White), Color(White), Color(White), Visible To and String, Default Visibility);
+		Create HUD Text(Event Player, Null, Null, Custom String("Done {0}", Event Player.Done), Left, 3, Color(White), Color(White), Color(White), Visible To and String, Default Visibility);
+	}
+}
+
+rule("Scanner: wall scan")
+{
+	event
+	{
+		Ongoing - Each Player;
+		All;
+		All;
+	}
+
+	conditions
+	{
+		Is Button Held(Event Player, Button(Interact)) == True;
+		Is Button Held(Event Player, Button(Crouch)) == True;
+		Event Player.Scanning == False;
+		Event Player.Done == False;
+	}
+
+	actions
+	{
+		Event Player.Scanning = True;
+		Event Player.Step = 1;
+		Event Player.X0 = -76.25;
+		Event Player.NX = 104;
+		Event Player.Z0 = -62.25;
+		Event Player.NZ = 88;
+		Event Player.Heights = Array(0.6, 1.4, 2.2, 3);
+		Event Player.Layers = 4;
+		Small Message(Event Player, Custom String("Wall scan started"));
+		Enable Inspector Recording;
+		Global.Row = Array(-1, Event Player.X0, Event Player.Z0, Event Player.Step, Event Player.NX, Event Player.NZ, 0.6, 1.4, 2.2, 3, Event Player.Layers, 4);
+		Disable Inspector Recording;
+		For Player Variable(Event Player, J, 0, Event Player.NZ + 1, 1);
+			Event Player.Temp = Array(Event Player.J);
+			Event Player.Pz = Event Player.Z0 + Event Player.J * Event Player.Step;
+			For Player Variable(Event Player, I, 0, Event Player.NX + 1, 1);
+				Event Player.Px = Event Player.X0 + Event Player.I * Event Player.Step;
+				For Player Variable(Event Player, Dir, 0, 4, 1);
+					Event Player.Dx = Value In Array(Array(1, -1, 0, 0), Event Player.Dir);
+					Event Player.Dz = Value In Array(Array(0, 0, 1, -1), Event Player.Dir);
+					Event Player.Code = 0;
+					For Player Variable(Event Player, K, 0, Event Player.Layers, 1);
+						Event Player.YFrom = Value In Array(Event Player.Heights, Event Player.K);
+						Event Player.HitPos = Ray Cast Hit Position(Vector(Event Player.Px, Event Player.YFrom, Event Player.Pz), Vector(Event Player.Px + Event Player.Dx * Event Player.Step, Event Player.YFrom, Event Player.Pz + Event Player.Dz * Event Player.Step), Null, All Players(All Teams), False);
+						Event Player.Dist = Distance Between(Vector(Event Player.Px, Event Player.YFrom, Event Player.Pz), Event Player.HitPos) / Event Player.Step;
+						Event Player.Digit = 0;
+						If(Event Player.Dist < 0.98);
+							Event Player.Digit = Min(9, 1 + Round To Integer(Event Player.Dist * 9, Down));
+						End;
+						Event Player.Code = Event Player.Code * 10 + Event Player.Digit;
+					End;
+					Modify Player Variable(Event Player, Temp, Append To Array, Event Player.Code);
+				End;
+				Wait(0.016, Ignore Condition);
+			End;
+			Enable Inspector Recording;
+			Global.Row = Event Player.Temp;
+			Disable Inspector Recording;
+		End;
+		Enable Inspector Recording;
+		Global.Row = Array(-2, 7);
+		Disable Inspector Recording;
+		Event Player.Done = True;
+		Event Player.Scanning = False;
+		Big Message(Event Player, Custom String("Wall scan done - copy log (Global, CSV all)"));
+	}
+}
