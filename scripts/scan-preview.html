@@ -170,8 +170,13 @@ function cellColor(x, y) {
   const p = T.play[y][x];
   if (p !== 'i') return $('showOut').checked && T.floor[y][x] !== '.' ? COLORS.O : null;
   const s = stand(x, y);
-  if (odd(x, y) && $('which').value !== 'judge') return COLORS.R;
-  if ($('which').value === 'judge') {
+  if ($('which').value !== 'judge') {
+    // 아래층·위층 보기: 스캔에 있는 밟는 면에 찍어서 넣은 2층도 더한다
+    const all = surfaces(x, y).map(e => e.h);
+    if (all.length === 0 || all.length >= 3) return COLORS.R;
+    return COLORS[floorOf($('which').value === 'lo' ? all[all.length - 1] : all[0])];
+  }
+  {
     if (!s.length) return ADDED.has(y * T.w + x) ? addedColor(ADDED.get(y * T.w + x)) : COLORS.R;
     const c0 = y * T.w + x, ks = NR[c0], est = ADDED.get(c0);
     for (const [i, k] of ks.entries()) {
@@ -181,7 +186,19 @@ function cellColor(x, y) {
     }
     return est ? addedColor(est) : null;
   }
-  return COLORS[floorOf($('which').value === 'lo' ? s[s.length - 1] : s[0])];
+}
+
+/** 칸의 밟는 면 목록 (위에서부터): 스캔에 있는 면 + 찍어서 넣은 2층. 찍어서 넣은 면은 높이가 같은 스캔 면을 대신한다 */
+function surfaces(x, y) {
+  const c = y * T.w + x, s = stand(x, y), add = ADDED.get(c);
+  const list = s.map((h, i) => ({ h, text: NR[c][i] === undefined ? '덩어리 없음' : stateOf(NR[c][i]) }));
+  if (add) {
+    const text = `2층, 찍기 ${add.n}번${add.exact ? '' : ' 넓이 추정'}`;
+    const same = list.find(e => Math.abs(e.h - add.hq) <= 6);
+    if (same) Object.assign(same, { h: add.hq, text });
+    else list.push({ h: add.hq, text });
+  }
+  return list.sort((a, b) => b.h - a.h);
 }
 
 function cellRect(p, x, y, e) {
@@ -297,13 +314,11 @@ cv.addEventListener('mousemove', ev => {
   const c = cellAt(ev);
   if (!c) { $('info').textContent = '스캔 범위 밖'; return; }
   const { x, y } = c, top = T.top[y][x], w = T.walk[y][x], f = T.flags[y][x];
-  const s = T.play[y][x] === 'i' ? stand(x, y) : [];
   $('info').textContent = [
     `보드 칸 [${x}, ${y}]   게임 X ${gameX(x + 0.5).toFixed(2)}, Z ${gameZ(y + 0.5).toFixed(2)}`,
     PLAY[T.play[y][x]],
-    T.play[y][x] === 'i' ? `밟는 면: ${s.length ? s.map((v, i) => `${m(v)} (${NR[y * T.w + x][i] === undefined ? '덩어리 없음' : stateOf(NR[y * T.w + x][i])})`).join(', ') : '없음'}` : '',
-    ADDED.has(y * T.w + x) ? `찍기 ${ADDED.get(y * T.w + x).n}번: ${m(ADDED.get(y * T.w + x).hq)} ${ADDED.get(y * T.w + x).exact ? '(스캔 면)' : '(넓이 추정)'}` : '',
-    `설 수 있는 면 전체: ${w.length ? w.map(m).join(', ') : '없음'}`,
+    T.play[y][x] === 'i' ? `밟는 면 (위에서부터): ${surfaces(x, y).map(e => `${m(e.h)} (${e.text})`).join(', ') || '없음'}` : '',
+    `스캔에 잡힌 설 수 있는 면 (지붕 포함): ${w.length ? w.map(m).join(', ') : '없음'}`,
     top === null ? '맨 위 면: 없음' : `맨 위 면: ${m(top)} (법선 y ${(T.topN[y][x] / 99).toFixed(2)})`,
     f === 'f' || f === 'F' ? '채움 (이웃 값으로 채운 칸)' : '',
   ].filter(Boolean).join('\n');
