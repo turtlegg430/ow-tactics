@@ -73,6 +73,19 @@
 .rotbtns button:hover { background: var(--hover); }
 .rotbtns button:focus-visible { outline: 2px solid var(--ally); outline-offset: 2px; }
 
+.mapsel {
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--page-fg);
+}
+.mapsel option { color: #111; }
+.mapsel:focus-visible { outline: 2px solid var(--ally); outline-offset: 2px; }
+
 .opt {
   display: flex;
   gap: 9px;

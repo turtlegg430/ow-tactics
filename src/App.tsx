@@ -1,22 +1,28 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Board } from './board/Board.tsx'
 import { Compass } from './board/Compass.tsx'
 import { useRotation } from './board/useRotation.ts'
+import { floor as kingsRowAFloor } from './data/maps/kings-row-a/floor.ts'
 import { sianDemo } from './data/maps/sian-demo.ts'
 import { buildTerrain } from './engine/terrain.ts'
 import './App.css'
 
-// 칸 정보는 각도와 상관없어서 처음 한 번만 만든다
-const terrain = buildTerrain(sianDemo)
+const MAPS = [
+  { map: sianDemo, note: 'P1 5차 시안의 가상 맵을 옮겨 온 보드예요. 배치는 보이는지 확인하려는 예시예요.' },
+  { map: kingsRowAFloor, note: '왕의 길 A의 1층 바닥만 1m 칸으로 그린 첫 단계예요 (D-072). 벽·건물과 2층은 다음 단계에서 올라가요.' },
+]
 
 function App() {
   const { angle, settled, rotateBy } = useRotation()
   const [showLabels, setShowLabels] = useState(true)
+  const [mapIndex, setMapIndex] = useState(0)
+  // 칸 정보는 각도와 상관없어서 맵마다 한 번만 만든다
+  const terrain = useMemo(() => buildTerrain(MAPS[mapIndex].map), [mapIndex])
   return (
     <main className="page">
       <header className="head">
         <h1>오버워치 운영 학습 (가칭)</h1>
-        <p>P1 5차 시안의 가상 맵을 옮겨 온 보드예요. 배치는 보이는지 확인하려는 예시예요.</p>
+        <p>{MAPS[mapIndex].note}</p>
       </header>
 
       <div className="stage">
@@ -24,6 +30,16 @@ function App() {
       </div>
 
       <aside className="side">
+        <section>
+          <h2>맵</h2>
+          <select className="mapsel" value={mapIndex} onChange={e => setMapIndex(Number(e.target.value))}>
+            {MAPS.map((m, i) => (
+              <option key={m.map.id} value={i}>
+                {m.map.name}
+              </option>
+            ))}
+          </select>
+        </section>
         <section>
           <h2>시점</h2>
           <div className="rotbtns">
