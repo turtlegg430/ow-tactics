@@ -1,0 +1,60 @@
+/* 보드와 방향 표시. 값은 P1 5차 시안(reference/p1-sian-5.html) 그대로 */
+
+.frame {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 4px;
+  background: radial-gradient(ellipse 70% 75% at 50% 50%, #2d2925 0%, #1a1816 62%, #121110 100%);
+}
+
+.board {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* 지형 */
+.board .face { stroke: rgba(0, 0, 0, .22); stroke-width: .7; stroke-linejoin: round; }
+.board .lip { stroke: rgba(255, 255, 255, .34); stroke-width: 1.1; stroke-linecap: round; }
+.board .step { stroke: rgba(26, 22, 18, .8); stroke-width: 1.5; stroke-linecap: round; }
+.board .struct-top { stroke: #2b2825; stroke-width: 1.2; stroke-linejoin: round; }
+.board .roof-line { stroke: #f1ece2; stroke-width: 1.9; stroke-linecap: round; }
+.board .chev-bg { fill: none; stroke: rgba(15, 12, 10, .85); stroke-width: 5.2; stroke-linecap: round; stroke-linejoin: round; }
+.board .chev { fill: none; stroke: #fff; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.board .track { fill: none; stroke: rgba(240, 236, 228, .72); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.board .track-arrow { fill: rgba(244, 240, 232, .95); stroke: rgba(20, 18, 16, .85); stroke-width: 1; stroke-linejoin: round; }
+.board .point-fill { fill: rgba(255, 255, 255, .17); }
+.board .point-line { fill: none; stroke: rgba(255, 255, 255, .95); stroke-width: 2.2; stroke-linejoin: round; }
+
+/* 지명 이름표 */
+.board .maplabel {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 12.5px;
+  fill: rgba(255, 255, 255, .93);
+  stroke: rgba(12, 10, 9, .85);
+  stroke-width: 3.4;
+  paint-order: stroke;
+  text-anchor: middle;
+}
+.board.labels-off .maplabels { display: none; }
+
+/* 방향 표시 */
+.compass {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.compass svg {
+  flex: none;
+  width: 70px;
+  height: 46px;
+}
