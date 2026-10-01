@@ -3,6 +3,7 @@ import { Board } from './board/Board.tsx'
 import { Compass } from './board/Compass.tsx'
 import { useRotation } from './board/useRotation.ts'
 import { floor as kingsRowAFloor } from './data/maps/kings-row-a/floor.ts'
+import { walls as kingsRowAWalls } from './data/maps/kings-row-a/walls.ts'
 import { sianDemo } from './data/maps/sian-demo.ts'
 import { buildTerrain } from './engine/terrain.ts'
 import './App.css'
@@ -10,6 +11,7 @@ import './App.css'
 const MAPS = [
   { map: sianDemo, note: 'P1 5차 시안의 가상 맵을 옮겨 온 보드예요. 배치는 보이는지 확인하려는 예시예요.' },
   { map: kingsRowAFloor, note: '왕의 길 A의 1층 바닥만 1m 칸으로 그린 첫 단계예요 (D-072). 벽·건물과 2층은 다음 단계에서 올라가요.' },
+  { map: kingsRowAWalls, note: '왕의 길 A의 1층에 벽 스캔으로 벽을 세운 단계예요 (D-072 6단계). 높이는 대강의 견적이고, 2층은 다음 단계에서 정해요.' },
 ]
 
 function App() {
