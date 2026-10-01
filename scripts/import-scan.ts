@@ -869,10 +869,11 @@ const BOARD_CELL = 1
 /** 보드 높이를 반올림하는 단위 (m). 몇 cm 차이로 옆면이 잘게 생기지 않게 */
 const BOARD_H_STEP = 0.1
 /** 계단으로 볼 한 칸(1m) 높이 차 (m) */
-const STAIR_STEP_MIN = 0.15
+const STAIR_STEP_MIN = 0.3
 const STAIR_STEP_MAX = 1.0
-/** 이보다 덜 오르는 계단 덩어리에는 꺾쇠를 달지 않는다 (연석·낮은 턱) */
-const STAIR_MIN_RISE_M = 0.8
+/** 이보다 덜 오르거나 칸이 적은 계단 덩어리는 계단이 아니라 바닥으로 본다 (연석·보도 비탈) */
+const STAIR_MIN_RISE_M = 1.0
+const STAIR_MIN_CELLS = 2
 /** 1층으로 이어진다고 볼 이웃 칸 높이 차 (m). 계단 한 칸이나 뛰어오를 만한 턱 */
 const FLOOR_REACH = 1.0
 /** 1층 보드를 만들며 지운 칸 수 (보고용) */
@@ -1031,8 +1032,9 @@ function buildFloor(
       slopes.push(s)
       stairAt.set(bx + ',' + by, s)
     }
-  // 꺾쇠: 같은 축으로 이어진 계단 칸 덩어리마다 하나, 많이 오르는 것만
+  // 같은 축으로 이어진 계단 칸 덩어리마다: 충분히 오르면 꺾쇠 하나, 아니면 계단에서 빼서 바닥으로
   const chevrons: Chevron[] = []
+  const notStair = new Set<Slope>()
   const seen = new Set<string>()
   for (const [key, s0] of stairAt) {
     if (seen.has(key)) continue
@@ -1052,12 +1054,17 @@ function buildFloor(
       }
     }
     const hs = group.flatMap(s => [s.a, s.b])
-    if (Math.max(...hs) - Math.min(...hs) < STAIR_MIN_RISE_M) continue
+    if (Math.max(...hs) - Math.min(...hs) < STAIR_MIN_RISE_M || group.length < STAIR_MIN_CELLS) {
+      for (const s of group) notStair.add(s)
+      continue
+    }
     const up = group.reduce((acc, s) => acc + (s.b - s.a), 0) > 0 ? 1 : -1
     const mx = group.reduce((acc, s) => acc + s.cells[0][0], 0) / group.length + 0.5
     const my = group.reduce((acc, s) => acc + s.cells[0][1], 0) / group.length + 0.5
     chevrons.push({ x: Math.round(mx * 10) / 10, y: Math.round(my * 10) / 10, axis: s0.axis, up })
   }
+  for (const s of notStair) stairAt.delete(s.cells[0].join(','))
+  const stairs = slopes.filter(s => !notStair.has(s))
 
   const rows: string[] = []
   const cellHeights: number[][] = []
@@ -1084,7 +1091,7 @@ function buildFloor(
     slab,
     pitBottom: slab - 1,
     fall: slab - 0.5,
-    slopes,
+    slopes: stairs,
     chevrons,
     labels: [],
     compass: [],
@@ -1343,7 +1350,8 @@ fs.mkdirSync(outDir, { recursive: true })
 const htmlPath = path.join(outDir, `${MAP.id}-겹쳐보기.html`)
 const data = JSON.stringify({ terrain, image: '../' + MAP.image, fit: { k: fit.k, t: fit.t }, report: lines.join('\n'), review: review.groups,
   regions: built.regions.map(r => ({ x: r.x, y: r.y, hq: r.hq, mid: r.mid, cells: r.cells, kind: r.kind, covered: r.covered })), nodeRegion: built.nodeRegion, labels: labelsFile?.regions ?? [], cuts, labelsName,
-  stamps: stamped.results, stampRegions: [...stamped.label.keys()], added: stamped.added.filter(f => f.exact), estRaw: stamped.estRaw })
+  stamps: stamped.results, stampRegions: [...stamped.label.keys()], added: stamped.added.filter(f => f.exact), estRaw: stamped.estRaw,
+  floor: { cell: BOARD_CELL, rows: floor.rows, heights: floor.cellHeights, stairs: floor.slopes.map(s => s.cells[0]) } })
 const template = fs.readFileSync(path.join(root, 'scripts/scan-preview.html'), 'utf8')
 fs.writeFileSync(htmlPath, template.replace('const DATA = __DATA__', () => 'const DATA = ' + data))
 lines.push(`겹쳐 보기: ${htmlPath}`)

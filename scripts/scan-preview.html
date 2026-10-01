@@ -47,6 +47,7 @@
   <label>투명도 <input type="range" id="alpha" min="0" max="100" value="55"></label>
   <label>확대 <input type="range" id="zoom" min="10" max="150" value="40"></label>
   <label>층 <select id="which">
+    <option value="floor">1층 보드 (1m 칸, D-072)</option>
     <option value="judge">2층 판정 (면 덩어리)</option>
     <option value="lo">아래층 (밟는 면 중 가장 낮은 것)</option>
     <option value="hi">위층 (밟는 면 중 가장 높은 것)</option>
@@ -166,6 +167,32 @@ function stateOf(k) {
 }
 const STATE_COLOR = { '1층': COLORS.G, '2층': COLORS.U, '미정': COLORS.cand, '계단': COLORS.stair };
 
+// ----- 1층 보드 (1m 칸, D-072) -----
+const F = DATA.floor;
+const fStair = new Set(F.stairs.map(([x, y]) => x + ',' + y));
+/** 높이별 색: 낮으면 푸른 녹색, 1층 바닥 높이(0m)는 녹색, 높을수록 노랑·주황 */
+const RAMP = [[-1, [47, 93, 107]], [0, [109, 143, 90]], [1.5, [185, 182, 94]], [3, [232, 198, 106]], [5, [240, 138, 75]]];
+function rampColor(h) {
+  if (h <= RAMP[0][0]) return `rgb(${RAMP[0][1]})`;
+  for (let i = 1; i < RAMP.length; i++) {
+    const [h1, c1] = RAMP[i], [h0, c0] = RAMP[i - 1];
+    if (h <= h1) { const u = (h - h0) / (h1 - h0); return `rgb(${c0.map((v, k) => Math.round(v + (c1[k] - v) * u))})`; }
+  }
+  return `rgb(${RAMP[RAMP.length - 1][1]})`;
+}
+const fGameX = bx => T.toGame.originX + sx * bx * F.cell;
+const fGameZ = by => T.toGame.originZ + sz * by * F.cell;
+function drawFloor() {
+  const paths = {}, e = F.cell / 2 * 1.03;
+  F.rows.forEach((row, by) => [...row].forEach((ch, bx) => {
+    if (ch === '.') return;
+    const c = fStair.has(bx + ',' + by) ? COLORS.stair : rampColor(F.heights[by][bx]);
+    const X = fGameX(bx + 0.5), Z = fGameZ(by + 0.5);
+    (paths[c] = paths[c] || new Path2D()).rect(X - e, Z - e, 2 * e, 2 * e);
+  }));
+  for (const c in paths) { ctx.fillStyle = c; ctx.fill(paths[c]); }
+}
+
 function cellColor(x, y) {
   const p = T.play[y][x];
   if (p !== 'i') return $('showOut').checked && T.floor[y][x] !== '.' ? COLORS.O : null;
@@ -211,7 +238,8 @@ function draw() {
   ctx.clearRect(0, 0, cv.width, cv.height);
   ctx.setTransform(M);
   const h = T.cell / 2, judge = $('which').value === 'judge';
-  if ($('showFloor').checked) {
+  if ($('which').value === 'floor') { if ($('showFloor').checked) drawFloor(); }
+  else if ($('showFloor').checked) {
     const paths = {};
     for (let y = 0; y < T.d; y++) for (let x = 0; x < T.w; x++) {
       const c = cellColor(x, y);
@@ -314,8 +342,10 @@ cv.addEventListener('mousemove', ev => {
   const c = cellAt(ev);
   if (!c) { $('info').textContent = '스캔 범위 밖'; return; }
   const { x, y } = c, top = T.top[y][x], w = T.walk[y][x], f = T.flags[y][x];
+  const fx = Math.floor(x * T.cell / F.cell), fy = Math.floor(y * T.cell / F.cell), fch = F.rows[fy]?.[fx];
   $('info').textContent = [
     `보드 칸 [${x}, ${y}]   게임 X ${gameX(x + 0.5).toFixed(2)}, Z ${gameZ(y + 0.5).toFixed(2)}`,
+    $('which').value === 'floor' ? (fch && fch !== '.' ? `1층 보드 칸 [${fx}, ${fy}]: ${F.heights[fy][fx].toFixed(1)}m${fStair.has(fx + ',' + fy) ? ' (계단)' : ''}` : '1층 보드: 빈 칸 (경기 밖)') : '',
     PLAY[T.play[y][x]],
     T.play[y][x] === 'i' ? `밟는 면 (위에서부터): ${surfaces(x, y).map(e => `${m(e.h)} (${e.text})`).join(', ') || '없음'}` : '',
     `스캔에 잡힌 설 수 있는 면 (지붕 포함): ${w.length ? w.map(m).join(', ') : '없음'}`,
@@ -423,6 +453,12 @@ function stampList() {
 }
 
 function legend() {
+  if ($('which').value === 'floor') {
+    $('legend').innerHTML = [[-1, '−1m'], [0, '0m (1층 바닥)'], [1.5, '1.5m'], [3, '3m'], [5, '5m 이상']]
+      .map(([v, n]) => `<span class="sw" style="background:${rampColor(v)}"></span><span>${n}</span>`).join('') +
+      `<span class="sw" style="background:${COLORS.stair}"></span><span>계단</span>`;
+    return;
+  }
   const judge = $('which').value === 'judge';
   const rows = (judge ? [
     [COLORS.G, `1층 (${T.floorBounds.upper}m 미만)`],
