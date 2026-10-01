@@ -19,6 +19,9 @@ const MAP = {
   out: 'src/data/maps/kings-row-a/terrain.ts',
   /** 1층 보드 (1m 칸, D-072) */
   floorOut: 'src/data/maps/kings-row-a/floor.ts',
+  /** 벽 스캔 CSV (tools/workshop/wall-scanner-v7-kingsrow-a.txt로 기록, D-072 5단계). 없으면 건너뜀 */
+  walls: 'kings-row-a-벽.csv',
+  wallsOut: 'src/data/maps/kings-row-a/walls.ts',
   /** 층 경계 (m). 초안이며 P3 작업 3에서 사용자가 확정한다 (D-063) */
   floorBounds: { upper: 3.5, high: 10 },
 }
@@ -925,13 +928,115 @@ export const floor: MapData = {
 `
 }
 
+// ---------- 6-6. 벽 (D-072 5·6단계) ----------
+
+/** 벽 스캐너 v7의 쏜 높이 순서에서 몸 높이(1.4m, 2.2m)의 자리. 둘 중 하나라도 막히면 벽 */
+const BODY_HEIGHTS = [1, 2]
+/** 벽 높이 (m). 1층처럼 하나로 통일한다. 실제 지붕 높이(최대 12m)로 세우면 벽이 바닥을 다 가려서 미로처럼 보였다 */
+const WALL_H = 3
+
+interface WallScan {
+  /** 스캔 점 수 (보드 칸 수와 같다) */
+  nx: number
+  nz: number
+  /** codes[j][i] = [+X, −X, +Z, −Z] 방향마다 높이별 자리수 (0 = 안 막힘, 1~9 = 막힌 거리) */
+  codes: number[][][]
+  heights: number
+}
+
+/** 벽 스캔 CSV (tools/workshop/wall-scanner-v7-kingsrow-a.txt) */
+function readWalls(file: string): WallScan {
+  let hdr: { nx: number; nz: number; layers: number } | null = null
+  const rows = new Map<number, number[]>()
+  let prev = ''
+  for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const p = line.split(',')
+    if (p.length < 3 || line === prev) continue
+    prev = line
+    const isGlobal = p[1] === 'Global'
+    if (!isGlobal && !hdr) hdr = { nx: Number(p[2 + PLAYER_VARS.NX]), nz: Number(p[2 + PLAYER_VARS.NZ]), layers: Number(p[2 + PLAYER_VARS.Layers]) }
+    const cell = isGlobal ? p[2] : p[2 + PLAYER_VARS.Temp]
+    if (!cell || !cell.startsWith('[') || !cell.endsWith(']')) continue
+    const v = cell.slice(1, -1).split(';').map(s => Number(s.replace('****', '1488')))
+    if (v[0] === -1) hdr = { nx: v[4], nz: v[5], layers: v[10] }
+    else if (v[0] >= 0 && hdr && v.length === 1 + (hdr.nx + 1) * 4) rows.set(v[0], v.slice(1))
+  }
+  if (!hdr) fail(`${file}: 머리 정보를 찾지 못함`)
+  const codes: number[][][] = []
+  for (let j = 0; j <= hdr.nz; j++) {
+    const r = rows.get(j)
+    if (!r) fail(`${file}: ${j}번 줄이 없음`)
+    codes.push(Array.from({ length: hdr.nx + 1 }, (_, i) => r.slice(i * 4, i * 4 + 4)))
+  }
+  return { nx: hdr.nx + 1, nz: hdr.nz + 1, codes, heights: hdr.layers }
+}
+
+/**
+ * 1층 보드에 벽 칸을 세운다. 이웃한 두 칸 사이가 몸 높이에서 막혔으면 벽이 있다.
+ * 벽이 서는 칸: 양쪽에서 다 막혔으면 막힌 거리로 벽 가운데가 어느 칸 쪽인지, 한쪽만 막혔으면 반대쪽 칸(그 칸 가운데가 벽 속).
+ * 1층 바깥(빈 칸) 쪽에 서는 벽은 경기 구역 가장자리의 건물이다. 벽 높이는 WALL_H 하나
+ */
+function buildWalls(t: ScanTerrain, floor: MapData, ws: WallScan): MapData {
+  const w = floor.rows[0].length
+  const d = floor.rows.length
+  // 스캔 점 (i, j)는 게임 X = −76.25 + i, Z = −62.25 + j → 보드 칸 (w − 1 − i, d − 1 − j). 방향 +X는 보드 −x, +Z는 보드 −y
+  const ray = (bx: number, by: number, dir: '+x' | '-x' | '+y' | '-y') => {
+    const code = ws.codes[d - 1 - by]?.[w - 1 - bx]?.[{ '-x': 0, '+x': 1, '-y': 2, '+y': 3 }[dir]]
+    if (code === undefined) return null
+    const digits = String(code).padStart(ws.heights, '0').split('').map(Number)
+    const hit = BODY_HEIGHTS.map(k => digits[k]).filter(v => v > 0)
+    return hit.length ? (Math.min(...hit) - 0.5) / 9 : null
+  }
+  const isFloor = (bx: number, by: number) => floor.rows[by]?.[bx] === 'G'
+  const wall = new Set<string>()
+  for (let by = 0; by < d; by++)
+    for (let bx = 0; bx < w; bx++)
+      for (const [dx, dy, ab, ba] of [[1, 0, '+x', '-x'], [0, 1, '+y', '-y']] as const) {
+        const nx = bx + dx
+        const ny = by + dy
+        if (nx >= w || ny >= d || (!isFloor(bx, by) && !isFloor(nx, ny))) continue
+        const da = ray(bx, by, ab)
+        const db = ray(nx, ny, ba)
+        if (da === null && db === null) continue
+        const nearA = da !== null && db !== null ? (da + 1 - db) / 2 < 0.5 : db === null
+        wall.add(nearA ? bx + ',' + by : nx + ',' + ny)
+      }
+  const rows = floor.rows.map((r, by) => [...r].map((ch, bx) => (wall.has(bx + ',' + by) ? 'W' : ch)).join(''))
+  const cellHeights = rows.map(r => [...r].map(ch => (ch === 'W' ? WALL_H : 0)))
+  return { ...floor, id: `${t.id}-walls`, name: '왕의 길 A (1층 + 벽)', rows, cellHeights }
+}
+
+function wallsSource(m: MapData) {
+  const rows = (a: unknown[]) => '[\n' + a.map(r => '    ' + JSON.stringify(r) + ',\n').join('') + '  ]'
+  return `// 자동 생성 파일. 손으로 고치지 않는다.
+// scripts/import-scan.ts가 1층 보드(floor.ts)에 벽 스캔(v7)으로 벽 칸을 세워 만든다 (D-072 6단계). 형식은 src/data/types.ts의 MapData
+import type { MapData } from '../../types.ts'
+
+export const walls: MapData = {
+  id: '${m.id}',
+  name: '${m.name}',
+  rows: ${rows(m.rows)},
+  cellHeights: ${rows(m.cellHeights!)},
+  heights: { B: ${m.heights.B}, G: ${m.heights.G}, M: ${m.heights.M}, U: ${m.heights.U}, W: ${m.heights.W} },
+  slab: ${m.slab},
+  pitBottom: ${m.pitBottom},
+  fall: ${m.fall},
+  slopes: [],
+  chevrons: [],
+  labels: [],
+  compass: [],
+  scale: { cellMeters: ${m.scale!.cellMeters}, heightMeters: ${m.scale!.heightMeters} },
+}
+`
+}
+
 // ---------- 6-5. 비교 그림 (결과를 드릴 때마다 함께) ----------
 
 /** 비교 그림을 줄이는 배율 (StatBanana 그림 픽셀 몇 개가 비교 그림 1픽셀) */
 const COMPARE_SCALE = 2
 
 /**
- * 1층 보드 비교 그림: 왼쪽은 StatBanana 그림, 오른쪽은 같은 그림 위에 1층 범위(연한 녹색)와 그 테두리(노랑).
+ * 비교 그림: 왼쪽은 StatBanana 그림, 오른쪽은 같은 그림 위에 1층 범위(연한 녹색)와 그 테두리(노랑), 벽 칸(회색).
  * 그림의 흰 경계선과 노란 테두리를 맞대 보면 범위가 맞는지 보인다. 스캔 폴더 '미리보기'에만 쓴다 (저장소에 넣지 않음)
  */
 function floorCompare(t: ScanTerrain, floor: MapData, img: Png, fit: Fit, file: string) {
@@ -951,7 +1056,7 @@ function floorCompare(t: ScanTerrain, floor: MapData, img: Png, fit: Fit, file: 
     const Z = (-ki * a - kr * b) / dd
     const bx = Math.floor((t.toGame.originX - X) / cell)
     const by = Math.floor((t.toGame.originZ - Z) / cell)
-    return floor.rows[by]?.[bx] === 'G'
+    return floor.rows[by]?.[bx] ?? '.'
   }
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
@@ -960,9 +1065,20 @@ function floorCompare(t: ScanTerrain, floor: MapData, img: Png, fit: Fit, file: 
       const o = (Math.floor(py) * img.w + Math.floor(px)) * img.bpp
       const rgb = [img.data[o], img.data[o + 1], img.data[o + 2]]
       out.set(rgb, (y * W * 2 + x) * 3)
-      const inside = isFloor(px, py)
-      const edge = [[S, 0], [-S, 0], [0, S], [0, -S]].some(([dx, dy]) => isFloor(px + dx, py + dy) !== inside)
-      const mixed = edge ? [255, 214, 10] : inside ? rgb.map((v, i) => Math.round(v * 0.55 + [109, 143, 90][i] * 0.45)) : rgb
+      // 칸 종류: G = 1층, W = 벽, . = 빈 칸. 1층 범위 테두리는 노랑, 벽은 회색에 진한 테두리
+      const kind = isFloor(px, py)
+      const inside = kind !== '.'
+      const edge = [[S, 0], [-S, 0], [0, S], [0, -S]].some(([dx, dy]) => (isFloor(px + dx, py + dy) !== '.') !== inside)
+      const wallEdge = kind === 'W' && [[S, 0], [-S, 0], [0, S], [0, -S]].some(([dx, dy]) => isFloor(px + dx, py + dy) !== 'W')
+      const mixed = edge
+        ? [255, 214, 10]
+        : wallEdge
+          ? [40, 38, 36]
+          : kind === 'W'
+            ? rgb.map(v => Math.round(v * 0.25 + 190 * 0.75))
+            : inside
+              ? rgb.map((v, i) => Math.round(v * 0.55 + [109, 143, 90][i] * 0.45))
+              : rgb
       out.set(mixed, (y * W * 2 + W + x) * 3)
     }
   writePng(file, W * 2, H, out)
@@ -1139,6 +1255,10 @@ const applied = applyLabels(terrain, built, labelsFile)
 const floor = buildFloor(terrain)
 const floorSrc = floorSource(floor)
 fs.writeFileSync(path.join(root, MAP.floorOut), floorSrc)
+// 벽 (6단계)
+const wallsPath = path.join(dir, MAP.walls)
+const walled = fs.existsSync(wallsPath) ? buildWalls(terrain, floor, readWalls(wallsPath)) : null
+if (walled) fs.writeFileSync(path.join(root, MAP.wallsOut), wallsSource(walled))
 const kinds = (k: RegionKind) => built.regions.filter(r => r.kind === k)
 const cands = kinds('cand')
 const decided = (l: string) => cands.filter(r => applied.label.get(built.regions.indexOf(r)) === l).length
@@ -1189,5 +1309,10 @@ lines.push(`겹쳐 보기: ${htmlPath}`)
 const comparePath = path.join(outDir, `${MAP.id}-1층-비교.png`)
 floorCompare(terrain, floor, image, fit, comparePath)
 lines.push(`1층 비교 그림: ${comparePath}`)
+if (walled) {
+  const wallComparePath = path.join(outDir, `${MAP.id}-벽-비교.png`)
+  floorCompare(terrain, walled, image, fit, wallComparePath)
+  lines.push(`벽 비교 그림: ${wallComparePath}`)
+}
 
 console.log(lines.join('\n'))
