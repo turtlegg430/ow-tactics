@@ -4,7 +4,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import type { ScanTerrain } from '../src/data/types.ts'
+import type { Chevron, MapData, ScanTerrain, Slope } from '../src/data/types.ts'
 import { readPng, type Png } from './png.ts'
 
 /** 왕의 길 A 스캔 설정. 파일 이름은 기획 작업 폴더 '스캔\'에 있는 것 */
@@ -17,6 +17,8 @@ const MAP = {
   /** 2층 위치 찍기 CSV (tools/workshop/floor-stamper.txt로 기록). 없으면 건너뜀 */
   stamps: 'kings-row-a-2층-위치.csv',
   out: 'src/data/maps/kings-row-a/terrain.ts',
+  /** 1층 보드 (1m 칸, D-072) */
+  floorOut: 'src/data/maps/kings-row-a/floor.ts',
   /** 층 경계 (m). 초안이며 P3 작업 3에서 사용자가 확정한다 (D-063) */
   floorBounds: { upper: 3.5, high: 10 },
 }
@@ -860,6 +862,263 @@ function applyStamps(t: ScanTerrain, built: ReturnType<typeof buildRegions>, onL
   return { label, added, results, estRaw }
 }
 
+// ---------- 6-4. 1층 보드 (D-072) ----------
+
+/** 1층 보드 칸 크기 (m). 스캔 칸 2×2가 보드 칸 하나 */
+const BOARD_CELL = 1
+/** 보드 높이를 반올림하는 단위 (m). 몇 cm 차이로 옆면이 잘게 생기지 않게 */
+const BOARD_H_STEP = 0.1
+/** 계단으로 볼 한 칸(1m) 높이 차 (m) */
+const STAIR_STEP_MIN = 0.15
+const STAIR_STEP_MAX = 1.0
+/** 이보다 덜 오르는 계단 덩어리에는 꺾쇠를 달지 않는다 (연석·낮은 턱) */
+const STAIR_MIN_RISE_M = 0.8
+/** 1층으로 이어진다고 볼 이웃 칸 높이 차 (m). 계단 한 칸이나 뛰어오를 만한 턱 */
+const FLOOR_REACH = 1.0
+/** 1층 보드를 만들며 지운 칸 수 (보고용) */
+const floorReport = { dropped: 0, unreached: 0 }
+/** 지붕만 잡혀 솟은 칸: 둘레 이 반경(칸)의 1층 가운데 값보다 이만큼(m) 넘게 높으면 지우고 채운다 */
+const FLOOR_PILLAR_R = 3
+const FLOOR_PILLAR_UP = 2
+
+/**
+ * 1층 바닥만 담은 보드 맵 (1m 칸). 왕의 길 A는 이번에만 v5 스캔에서 만든다 (D-072).
+ * 스캔 칸마다 1층 면 = 가장 낮은 설 수 있는 면. 단, 속이 빈 계단은 계단 면(면 덩어리 판정의 '계단')을 쓴다.
+ * 보드 칸 = 스캔 칸 2×2 중 경기 안인 칸이 2개 이상이면 그 높이들의 아래쪽 가운데 값. 못 잡은 칸은 이웃 값으로 채운다.
+ * 계단: 면 덩어리 판정의 계단이거나, 한 방향으로 한 칸에 STAIR_STEP_MIN~MAX씩 고르게 오르내리는 칸
+ */
+function buildFloor(
+  t: ScanTerrain,
+  built: ReturnType<typeof buildRegions>,
+  isStair: (k: number) => boolean,
+  /** 스캔 칸 c의 높이 h(5cm 단위) 면이 사용자가 2층으로 찍은 면인지. 2층은 1층이 될 수 없다 */
+  isUpper: (c: number, h: number) => boolean,
+): MapData {
+  const k = Math.round(BOARD_CELL / t.cell)
+  const w = Math.ceil(t.w / k)
+  const d = Math.ceil(t.d / k)
+  const H: (number | null)[][] = []
+  const stairFlag: boolean[][] = []
+  const inPlay: boolean[][] = []
+  for (let by = 0; by < d; by++) {
+    H.push([])
+    stairFlag.push([])
+    inPlay.push([])
+    for (let bx = 0; bx < w; bx++) {
+      const hs: number[] = []
+      let stairs = 0
+      let play = 0
+      for (let dy = 0; dy < k; dy++)
+        for (let dx = 0; dx < k; dx++) {
+          const x = bx * k + dx
+          const y = by * k + dy
+          if (x >= t.w || y >= t.d || t.play[y][x] !== 'i') continue
+          play++
+          const c = y * t.w + x
+          const si = built.stand[c].findIndex((_, i) => isStair(built.nodeRegion[c][i]))
+          const walk = t.walk[y][x]
+          if (si >= 0) {
+            hs.push(built.stand[c][si])
+            stairs++
+          } else {
+            // 가장 낮은 면. 단, 찍어서 정한 2층은 빼고 (그 밑 1층을 광선이 못 잡은 칸이면 비워 두고 채운다)
+            const low = walk.filter(v => !isUpper(c, v))
+            if (low.length) hs.push(low[low.length - 1])
+          }
+        }
+      inPlay[by].push(play >= 2)
+      hs.sort((a, b) => a - b)
+      H[by].push(play >= 2 && hs.length ? hs[(hs.length - 1) >> 1] * t.hUnit : null)
+      stairFlag[by].push(stairs >= 2)
+    }
+  }
+  // 광선이 지붕만 맞히고 바닥에 못 닿은 칸은 '가장 낮은 면'이 지붕이라 기둥처럼 솟는다.
+  // 둘레(반경 PILLAR_R칸) 1층 높이 가운데 값보다 PILLAR_UP 넘게 높은 칸은 지우고 아래에서 이웃 값으로 채운다 (계단은 그대로)
+  const drop: [number, number][] = []
+  for (let by = 0; by < d; by++)
+    for (let bx = 0; bx < w; bx++) {
+      const v = H[by][bx]
+      if (v === null || stairFlag[by][bx]) continue
+      const around: number[] = []
+      for (let dy = -FLOOR_PILLAR_R; dy <= FLOOR_PILLAR_R; dy++)
+        for (let dx = -FLOOR_PILLAR_R; dx <= FLOOR_PILLAR_R; dx++) {
+          const n = H[by + dy]?.[bx + dx]
+          if ((dx || dy) && n !== null && n !== undefined) around.push(n)
+        }
+      if (around.length && v > median(around) + FLOOR_PILLAR_UP) drop.push([bx, by])
+    }
+  for (const [bx, by] of drop) H[by][bx] = null
+  // 1층은 걸어서 이어진다: 가장 넓은 바닥 덩어리에서 한 칸에 FLOOR_REACH 이하로 오르내려 닿는 칸만 남긴다.
+  // 지붕만 잡혀 높이 떠 있는 덩어리는 지우고 아래에서 이웃 값으로 채운다
+  const reach = Array.from({ length: d }, () => new Array<boolean>(w).fill(false))
+  const comps: [number, number][][] = []
+  const seenR = Array.from({ length: d }, () => new Array<boolean>(w).fill(false))
+  for (let by = 0; by < d; by++)
+    for (let bx = 0; bx < w; bx++) {
+      if (H[by][bx] === null || seenR[by][bx]) continue
+      const comp: [number, number][] = [[bx, by]]
+      seenR[by][bx] = true
+      for (let i = 0; i < comp.length; i++) {
+        const [cx, cy] = comp[i]
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = cx + dx
+          const ny = cy + dy
+          const nv = H[ny]?.[nx]
+          if (nv === null || nv === undefined || seenR[ny][nx] || Math.abs(nv - H[cy][cx]!) > FLOOR_REACH) continue
+          seenR[ny][nx] = true
+          comp.push([nx, ny])
+        }
+      }
+      comps.push(comp)
+    }
+  comps.sort((a, b) => b.length - a.length)
+  for (const [bx, by] of comps[0] ?? []) reach[by][bx] = true
+  let unreached = 0
+  for (let by = 0; by < d; by++)
+    for (let bx = 0; bx < w; bx++) {
+      if (H[by][bx] !== null && !reach[by][bx]) {
+        H[by][bx] = null
+        unreached++
+      }
+    }
+  floorReport.dropped = drop.length
+  floorReport.unreached = unreached
+  // 경기 안인데 높이가 없는 칸은 이웃 가운데 값으로 채운다
+  for (let pass = 0; pass < 50; pass++) {
+    const fill: [number, number, number][] = []
+    for (let by = 0; by < d; by++)
+      for (let bx = 0; bx < w; bx++) {
+        if (!inPlay[by][bx] || H[by][bx] !== null) continue
+        const around: number[] = []
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const v = H[by + dy]?.[bx + dx]
+          if ((dx || dy) && v !== null && v !== undefined) around.push(v)
+        }
+        if (around.length) fill.push([bx, by, median(around)])
+      }
+    if (!fill.length) break
+    for (const [bx, by, v] of fill) H[by][bx] = v
+  }
+  const q = (v: number) => Math.round(v / BOARD_H_STEP) * BOARD_H_STEP
+  const h = (bx: number, by: number) => {
+    const v = H[by]?.[bx]
+    return v === null || v === undefined ? null : q(v)
+  }
+
+  // 계단 칸과 기울기: 높이가 더 크게 바뀌는 축을 따라, 양옆 칸과의 가운데 높이로 경사면을 만든다
+  const slopes: Slope[] = []
+  const stairAt = new Map<string, Slope>()
+  for (let by = 0; by < d; by++)
+    for (let bx = 0; bx < w; bx++) {
+      const c = h(bx, by)
+      if (c === null) continue
+      let best: { axis: 'x' | 'y'; a: number; b: number; rise: number } | null = null
+      for (const axis of ['x', 'y'] as const) {
+        const [px, py, nx, ny] = axis === 'x' ? [bx - 1, by, bx + 1, by] : [bx, by - 1, bx, by + 1]
+        const p = h(px, py)
+        const n = h(nx, ny)
+        const steady = p !== null && n !== null && Math.sign(c - p) === Math.sign(n - c) &&
+          [c - p, n - c].every(s => Math.abs(s) >= STAIR_STEP_MIN && Math.abs(s) <= STAIR_STEP_MAX)
+        if (!steady && !stairFlag[by][bx]) continue
+        const near = (v: number | null) => (v !== null && Math.abs(v - c) <= STAIR_STEP_MAX ? (v + c) / 2 : c)
+        const a = near(p)
+        const b = near(n)
+        if (Math.abs(b - a) < STAIR_STEP_MIN) continue
+        if (!best || Math.abs(b - a) > best.rise) best = { axis, a, b, rise: Math.abs(b - a) }
+      }
+      if (!best) continue
+      const s: Slope = { cells: [[bx, by]], axis: best.axis, a: best.a, b: best.b }
+      slopes.push(s)
+      stairAt.set(bx + ',' + by, s)
+    }
+  // 꺾쇠: 같은 축으로 이어진 계단 칸 덩어리마다 하나, 많이 오르는 것만
+  const chevrons: Chevron[] = []
+  const seen = new Set<string>()
+  for (const [key, s0] of stairAt) {
+    if (seen.has(key)) continue
+    const group: Slope[] = []
+    const stack = [key]
+    seen.add(key)
+    while (stack.length) {
+      const cur = stairAt.get(stack.pop()!)!
+      group.push(cur)
+      const [cx, cy] = cur.cells[0]
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nk = cx + dx + ',' + (cy + dy)
+        if (!seen.has(nk) && stairAt.get(nk)?.axis === s0.axis) {
+          seen.add(nk)
+          stack.push(nk)
+        }
+      }
+    }
+    const hs = group.flatMap(s => [s.a, s.b])
+    if (Math.max(...hs) - Math.min(...hs) < STAIR_MIN_RISE_M) continue
+    const up = group.reduce((acc, s) => acc + (s.b - s.a), 0) > 0 ? 1 : -1
+    const mx = group.reduce((acc, s) => acc + s.cells[0][0], 0) / group.length + 0.5
+    const my = group.reduce((acc, s) => acc + s.cells[0][1], 0) / group.length + 0.5
+    chevrons.push({ x: Math.round(mx * 10) / 10, y: Math.round(my * 10) / 10, axis: s0.axis, up })
+  }
+
+  const rows: string[] = []
+  const cellHeights: number[][] = []
+  let lo = Infinity
+  for (let by = 0; by < d; by++) {
+    let row = ''
+    const hr: number[] = []
+    for (let bx = 0; bx < w; bx++) {
+      const v = h(bx, by)
+      row += v === null ? '.' : stairAt.has(bx + ',' + by) ? 'S' : 'G'
+      hr.push(v ?? 0)
+      if (v !== null) lo = Math.min(lo, v)
+    }
+    rows.push(row)
+    cellHeights.push(hr)
+  }
+  const slab = q(lo - 0.6)
+  return {
+    id: `${t.id}-floor`,
+    name: '왕의 길 A (1층)',
+    rows,
+    cellHeights,
+    heights: { B: -1, G: 0, M: 0.5, U: 1.3, W: 1 },
+    slab,
+    pitBottom: slab - 1,
+    fall: slab - 0.5,
+    slopes,
+    chevrons,
+    labels: [],
+    compass: [],
+    scale: { cellMeters: BOARD_CELL, heightMeters: 1 },
+  }
+}
+
+function floorSource(m: MapData) {
+  const rows = (a: unknown[]) => '[\n' + a.map(r => '    ' + JSON.stringify(r) + ',\n').join('') + '  ]'
+  const slope = (s: Slope) => `{ cells: ${JSON.stringify(s.cells)}, axis: '${s.axis}', a: ${+s.a.toFixed(2)}, b: ${+s.b.toFixed(2)} }`
+  return `// 자동 생성 파일. 손으로 고치지 않는다.
+// scripts/import-scan.ts가 스캔 지형(terrain.ts)에서 1층 바닥만 1m 칸으로 만든다 (D-072). 형식은 src/data/types.ts의 MapData
+import type { MapData } from '../../types.ts'
+
+export const floor: MapData = {
+  id: '${m.id}',
+  name: '${m.name}',
+  rows: ${rows(m.rows)},
+  cellHeights: ${rows(m.cellHeights!)},
+  heights: ${JSON.stringify(m.heights).replace(/"(\w+)":/g, '$1: ').replace(/,/g, ', ').replace('{', '{ ').replace('}', ' }')},
+  slab: ${m.slab},
+  pitBottom: ${m.pitBottom},
+  fall: ${m.fall},
+  slopes: [
+${m.slopes.map(s => '    ' + slope(s) + ',\n').join('')}  ],
+  chevrons: [
+${m.chevrons.map(c => `    { x: ${c.x}, y: ${c.y}, axis: '${c.axis}', up: ${c.up} },\n`).join('')}  ],
+  labels: [],
+  compass: [],
+  scale: { cellMeters: ${m.scale!.cellMeters}, heightMeters: ${m.scale!.heightMeters} },
+}
+`
+}
+
 // ---------- 7. 파일 쓰기 ----------
 
 function terrainSource(t: ScanTerrain, csv: string[]) {
@@ -1026,6 +1285,22 @@ const table = heightTable(terrain)
 const review = reviewGroups(terrain)
 // 사용자 판정 (판정 파일은 겹쳐 보기에서 저장한다)
 const applied = applyLabels(terrain, built, labelsFile)
+// 1층 보드: 계단 = 사용자가 고른 판정, 없으면 면 덩어리 종류
+// 사용자가 2층으로 찍은 면 (찍은 덩어리, 찍어서 넣은 면)
+const upperRegions = new Set([...stamped.label.keys(), ...[...applied.label].filter(([, l]) => l === '2층').map(([k]) => k)])
+const upperAdded = new Map<number, number[]>()
+for (const f of stamped.added) f.cells.forEach((c, i) => upperAdded.set(c, [...(upperAdded.get(c) ?? []), f.hqs[i]]))
+const floor = buildFloor(
+  terrain,
+  built,
+  k => (applied.label.has(k) ? applied.label.get(k) === '계단' : built.regions[k].kind === 'stair'),
+  (c, h) => {
+    const i = built.stand[c].findIndex(v => v === h)
+    return (i >= 0 && upperRegions.has(built.nodeRegion[c][i])) || (upperAdded.get(c) ?? []).some(v => Math.abs(v - h) <= 6)
+  },
+)
+const floorSrc = floorSource(floor)
+fs.writeFileSync(path.join(root, MAP.floorOut), floorSrc)
 const kinds = (k: RegionKind) => built.regions.filter(r => r.kind === k)
 const cands = kinds('cand')
 const decided = (l: string) => cands.filter(r => applied.label.get(built.regions.indexOf(r)) === l).length
@@ -1052,6 +1327,7 @@ const lines = [
   `판정 파일 ${labelsName}: ${labelsFile ? `판정 ${labelsFile.regions.length}개${applied.lost ? `, 지금 데이터에서 못 찾은 판정 ${applied.lost}개` : ''}. 2층 후보 중 2층 ${decided('2층')}, 아님 ${decided('아님')}, 미정 ${cands.length - decided('2층') - decided('아님')}` : '아직 없음 (겹쳐 보기에서 판정하고 저장하면 생김)'}`,
   `2층 위치 찍기 ${MAP.stamps}: ${stamps.length ? `${stamps.length}곳. 찍은 덩어리 ${stamped.label.size}곳, 면을 따라 새로 넣은 곳 ${stamped.added.filter(f => f.exact).length}곳 ${stamped.added.filter(f => f.exact).reduce((a, f) => a + f.cells.length, 0)}칸, 넓이를 추정한 2층 ${stamped.added.filter(f => !f.exact).length}곳 ${stamped.added.filter(f => !f.exact).reduce((a, f) => a + f.cells.length, 0)}칸, 경기 구역에 새로 넣은 칸 ${opened.length}. 찍지 않은 2층 후보는 '아님'` : '아직 없음'}`,
   ...stamped.results.map(r => `  ${r.n}. 높이 ${(r.hq * terrain.hUnit).toFixed(2)}m, 보드 [${r.x}, ${r.y}]: ${r.text}`),
+  `1층 보드 (D-072, ${MAP.floorOut}): ${floor.rows[0].length}×${floor.rows.length}칸 (1m), 그리는 칸 ${floor.rows.join('').replace(/\./g, '').length}, 계단 ${floor.slopes.length}칸·꺾쇠 ${floor.chevrons.length}개. 지붕만 잡혀 솟은 칸 ${floorReport.dropped}, 걸어서 안 이어져 지운 칸 ${floorReport.unreached} (둘 다 이웃 값으로 채움)`,
   '',
   `확인 대상 ${review.groups.length}곳 (경기 안인데 밟는 면이 없거나 3개 이상, ${GAP_MAX_CELLS}칸보다 큰 덩어리). 작은 덩어리 ${review.smallGroups}곳 ${review.smallCells}칸은 번호 없이 색만`,
   ...review.groups.map((s, i) => `${i + 1}. ${s.text}, 보드 x ${s.x0}~${s.x1} y ${s.y0}~${s.y1}`),
