@@ -74,3 +74,37 @@ export interface MapData {
     heightMeters: number
   }
 }
+
+// 스캔 지형 (P3 작업 2, D-062~D-064). 워크숍 스캐너로 잰 높이를 칸마다 담는다.
+// scripts/import-scan.ts가 만든다. 2.5D 보드에 어떻게 그릴지는 P3 작업 3에서 정한다
+
+export interface ScanTerrain {
+  id: string
+  /** 칸 수. 칸 하나 = 스캔 점 하나, 칸 [x, y]는 floor[y][x] */
+  w: number
+  d: number
+  /** 칸 한 변 (m) */
+  cell: number
+  /** 높이 값 1이 몇 m인지. 높이는 모두 이 단위의 정수다 (0.05면 90 = 4.5m) */
+  hUnit: number
+  /**
+   * 보드 좌표 → 게임 좌표. 보드는 위에서 본 모습 그대로 +Z가 위, +X가 왼쪽이라 두 축이 다 뒤집혀 있다.
+   * 보드 점 (x, y)는 게임 X = originX − x × cell, 게임 Z = originZ − y × cell (flip이 false면 −가 +)
+   */
+  toGame: { originX: number; originZ: number; cell: number; flipX: boolean; flipZ: boolean }
+  /** 층을 나눈 경계 높이 (m). upper 이상은 2층, high 이상은 높은 곳. 초안 (D-063) */
+  floorBounds: { upper: number; high: number }
+  /**
+   * 칸마다 한 글자. 가장 높은 설 수 있는 면의 층.
+   * G = 1층, U = 2층, H = 높은 곳, X = 설 수 있는 면 없음, . = 광선에 맞은 것 없음
+   */
+  floor: string[]
+  /** 칸마다 한 글자. . = 없음, c = 덮임, f = 채움, F = 덮임 + 채움 */
+  flags: string[]
+  /** 맨 위 면(위에서 보이는 면)의 높이. 맞은 것 없으면 null */
+  top: (number | null)[][]
+  /** 맨 위 면의 법선 y × 99 (99 = 평평, 0 = 수직) */
+  topN: (number | null)[][]
+  /** 칸마다 설 수 있는 면의 높이 목록. 위에서부터 */
+  walk: number[][][]
+}

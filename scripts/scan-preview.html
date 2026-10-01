@@ -1,0 +1,216 @@
+<!doctype html>
+<!-- 스캔 검수용 겹쳐 보기 틀. scripts/import-scan.ts가 아래 DATA 자리에 지형 데이터를 넣어 스캔 폴더 '미리보기\'에 쓴다. 저장소에는 이 틀만 둔다 -->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>스캔 겹쳐 보기</title>
+<style>
+  :root { --bg: #16151a; --panel: #1f1e24; --line: #34323b; --text: #e8e6ef; --dim: #a19fab; }
+  * { box-sizing: border-box; }
+  body { margin: 0; height: 100vh; display: flex; overflow: hidden; background: var(--bg); color: var(--text);
+    font: 13px/1.5 system-ui, "Malgun Gothic", sans-serif; }
+  aside { width: 360px; flex: none; overflow: auto; padding: 14px 16px; background: var(--panel); border-right: 1px solid var(--line); }
+  main { flex: 1; overflow: auto; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  h2 { font-size: 13px; margin: 18px 0 6px; color: var(--dim); }
+  .note { color: var(--dim); margin: 0; }
+  label { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  label input[type=range] { flex: 1; }
+  select { flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--line); padding: 2px; }
+  .legend { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; align-items: center; }
+  .sw { width: 16px; height: 12px; border: 1px solid #0006; }
+  #info { min-height: 120px; padding: 8px; background: var(--bg); border: 1px solid var(--line); white-space: pre-wrap; }
+  #sus { padding-left: 22px; margin: 0; }
+  #sus li { cursor: pointer; margin: 3px 0; }
+  #sus li:hover, #sus li.on { color: #ffd60a; }
+  pre { font: 11px/1.4 Consolas, "D2Coding", monospace; white-space: pre-wrap; margin: 0; }
+  .stack { position: relative; }
+  .stack img, .stack canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+  #err { color: #ff453a; }
+</style>
+</head>
+<body>
+<aside>
+  <h1>스캔 겹쳐 보기</h1>
+  <p class="note">검수용 (저장소에 올리지 않음). 바탕 그림: StatBanana 오버헤드 지도</p>
+  <p id="err"></p>
+
+  <h2>보기</h2>
+  <label>투명도 <input type="range" id="alpha" min="0" max="100" value="55"></label>
+  <label>확대 <input type="range" id="zoom" min="10" max="150" value="40"></label>
+  <label>칠하는 면 <select id="which">
+    <option value="hi">가장 높은 설 수 있는 면</option>
+    <option value="lo">가장 낮은 설 수 있는 면</option>
+  </select></label>
+  <label><input type="checkbox" id="showFloor" checked> 층 색</label>
+  <label><input type="checkbox" id="showCover" checked> 덮임 빗금</label>
+  <label><input type="checkbox" id="showFill" checked> 채움 표시</label>
+  <label><input type="checkbox" id="showSus" checked> 수상한 곳</label>
+
+  <h2>범례</h2>
+  <div class="legend" id="legend"></div>
+
+  <h2>칸 정보 (마우스를 올리면)</h2>
+  <div id="info">-</div>
+
+  <h2>수상한 곳 (누르면 그 자리로)</h2>
+  <ol id="sus"></ol>
+
+  <h2>보고</h2>
+  <pre id="report"></pre>
+</aside>
+<main id="main">
+  <div class="stack" id="stack"><img id="img" alt=""><canvas id="cv"></canvas></div>
+</main>
+<script>
+const DATA = __DATA__;
+const T = DATA.terrain;
+const COLORS = { G: '#6d8f5a', U: '#ece4cc', H: '#8c8c94', X: '#6b3a3a' };
+const NAMES = { G: '1층', U: '2층', H: '높은 곳', X: '설 수 있는 면 없음', '.': '맞은 것 없음' };
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d'), img = $('img'), stack = $('stack'), main = $('main');
+let selected = -1;
+
+// 게임 좌표 (X, Z) → 그림 픽셀. 맞춤값 규칙: p = k × (−X + iZ) + t, 픽셀 = (p의 실수부, −p의 허수부)
+const [kr, ki] = DATA.fit.k, [tr, ti] = DATA.fit.t;
+const M = new DOMMatrix([-kr, ki, -ki, -kr, tr, -ti]);
+const MI = M.inverse();
+
+// 보드 칸 → 게임 좌표 (칸 가운데)
+const sx = T.toGame.flipX ? -1 : 1, sz = T.toGame.flipZ ? -1 : 1;
+const gameX = bx => T.toGame.originX + sx * bx * T.cell;
+const gameZ = by => T.toGame.originZ + sz * by * T.cell;
+const classOf = hq => { const y = hq * T.hUnit; return y < T.floorBounds.upper ? 'G' : y < T.floorBounds.high ? 'U' : 'H'; };
+const m = (hq, d = 2) => (hq * T.hUnit).toFixed(d) + 'm';
+
+function cellClass(x, y) {
+  const f = T.floor[y][x];
+  if ($('which').value === 'hi' || f === '.' || f === 'X') return f;
+  const w = T.walk[y][x];
+  return classOf(w[w.length - 1]);
+}
+
+function draw() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.setTransform(M);
+  const h = T.cell / 2;
+  if ($('showFloor').checked) {
+    const paths = {};
+    for (let y = 0; y < T.d; y++) for (let x = 0; x < T.w; x++) {
+      const c = cellClass(x, y);
+      if (c === '.') continue;
+      const X = gameX(x + 0.5), Z = gameZ(y + 0.5), e = h * 1.04;
+      (paths[c] = paths[c] || new Path2D()).rect(X - e, Z - e, 2 * e, 2 * e);
+    }
+    for (const c in paths) { ctx.fillStyle = COLORS[c]; ctx.fill(paths[c]); }
+  }
+  if ($('showCover').checked) {
+    const p = new Path2D();
+    for (let y = 0; y < T.d; y++) for (let x = 0; x < T.w; x++) {
+      const f = T.flags[y][x];
+      if (f !== 'c' && f !== 'F') continue;
+      const X = gameX(x + 0.5), Z = gameZ(y + 0.5);
+      p.moveTo(X - h, Z - h); p.lineTo(X + h, Z + h);
+    }
+    ctx.strokeStyle = 'rgba(20, 18, 24, 0.8)'; ctx.lineWidth = 0.06; ctx.stroke(p);
+  }
+  if ($('showFill').checked) {
+    const p = new Path2D();
+    for (let y = 0; y < T.d; y++) for (let x = 0; x < T.w; x++) {
+      const f = T.flags[y][x];
+      if (f !== 'f' && f !== 'F') continue;
+      const X = gameX(x + 0.5), Z = gameZ(y + 0.5);
+      p.moveTo(X + 0.14, Z); p.arc(X, Z, 0.14, 0, Math.PI * 2);
+    }
+    ctx.fillStyle = '#ff4fd8'; ctx.fill(p);
+  }
+  if ($('showSus').checked) {
+    DATA.suspects.forEach((s, i) => {
+      const X0 = gameX(s.x0), X1 = gameX(s.x1), Z0 = gameZ(s.y0), Z1 = gameZ(s.y1);
+      ctx.setTransform(M);
+      ctx.strokeStyle = i === selected ? '#ffd60a' : '#ff453a';
+      ctx.lineWidth = i === selected ? 0.5 : 0.3;
+      ctx.strokeRect(Math.min(X0, X1), Math.min(Z0, Z1), Math.abs(X1 - X0), Math.abs(Z1 - Z0));
+      const c = M.transformPoint(new DOMPoint((X0 + X1) / 2, (Z0 + Z1) / 2));
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.font = 'bold 30px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 5; ctx.strokeStyle = '#000'; ctx.strokeText(String(i + 1), c.x, c.y);
+      ctx.fillStyle = i === selected ? '#ffd60a' : '#ff453a'; ctx.fillText(String(i + 1), c.x, c.y);
+    });
+  }
+}
+
+function layout() {
+  const z = $('zoom').value / 100;
+  stack.style.width = cv.width * z + 'px';
+  stack.style.height = cv.height * z + 'px';
+  cv.style.opacity = $('alpha').value / 100;
+}
+
+function cellAt(ev) {
+  const r = cv.getBoundingClientRect();
+  const p = MI.transformPoint(new DOMPoint((ev.clientX - r.left) / r.width * cv.width, (ev.clientY - r.top) / r.height * cv.height));
+  const x = Math.floor((p.x - T.toGame.originX) / (sx * T.cell));
+  const y = Math.floor((p.y - T.toGame.originZ) / (sz * T.cell));
+  return x >= 0 && y >= 0 && x < T.w && y < T.d ? { x, y } : null;
+}
+
+cv.addEventListener('mousemove', ev => {
+  const c = cellAt(ev);
+  if (!c) { $('info').textContent = '스캔 범위 밖'; return; }
+  const { x, y } = c, f = T.flags[y][x], top = T.top[y][x], w = T.walk[y][x];
+  $('info').textContent = [
+    `보드 칸 [${x}, ${y}]   게임 X ${gameX(x + 0.5).toFixed(2)}, Z ${gameZ(y + 0.5).toFixed(2)}`,
+    `층: ${NAMES[T.floor[y][x]]}`,
+    top === null ? '맨 위 면: 없음' : `맨 위 면: ${m(top)} (법선 y ${(T.topN[y][x] / 99).toFixed(2)})`,
+    `설 수 있는 면: ${w.length ? w.map(v => m(v)).join(', ') : '없음'}`,
+    (f === 'c' || f === 'F' ? '덮임 (위에 다른 면이 있음)  ' : '') + (f === 'f' || f === 'F' ? '채움 (이웃 값으로 채운 칸)' : ''),
+  ].join('\n');
+});
+
+function legend() {
+  const rows = [['G', '1층'], ['U', '2층'], ['H', '높은 곳'], ['X', '설 수 있는 면 없음']]
+    .map(([c, n]) => `<span class="sw" style="background:${COLORS[c]}"></span><span>${n}</span>`);
+  rows.push('<span class="sw" style="background:repeating-linear-gradient(45deg,#6d8f5a 0 3px,#141218 3px 4px)"></span><span>덮임: 위에 지붕·처마·위층이 있음</span>');
+  rows.push('<span class="sw" style="background:radial-gradient(#ff4fd8 40%,transparent 45%)"></span><span>채움: 빈틈·가로등·나무 자리를 이웃 값으로</span>');
+  rows.push('<span class="sw" style="border:2px solid #ff453a"></span><span>수상한 곳</span>');
+  $('legend').innerHTML = rows.join('');
+  const b = T.floorBounds;
+  $('legend').insertAdjacentHTML('afterend', `<p class="note">층 경계 (초안): ${b.upper}m 미만 1층, ${b.upper}~${b.high}m 2층, ${b.high}m 이상 높은 곳</p>`);
+}
+
+function suspects() {
+  DATA.suspects.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.textContent = s.text;
+    li.onclick = () => {
+      selected = i;
+      document.querySelectorAll('#sus li').forEach((e, k) => e.classList.toggle('on', k === i));
+      $('showSus').checked = true;
+      draw();
+      const c = M.transformPoint(new DOMPoint(gameX((s.x0 + s.x1) / 2), gameZ((s.y0 + s.y1) / 2)));
+      const z = $('zoom').value / 100;
+      main.scrollTo({ left: c.x * z - main.clientWidth / 2, top: c.y * z - main.clientHeight / 2, behavior: 'smooth' });
+    };
+    $('sus').appendChild(li);
+  });
+}
+
+function start(w, h) {
+  cv.width = w; cv.height = h;
+  $('zoom').value = Math.max(10, Math.min(150, Math.floor(main.clientWidth / w * 100)));
+  layout(); draw();
+}
+
+$('report').textContent = DATA.report;
+legend(); suspects();
+for (const id of ['showFloor', 'showCover', 'showFill', 'showSus', 'which']) $(id).addEventListener('change', draw);
+for (const id of ['alpha', 'zoom']) $(id).addEventListener('input', layout);
+img.onload = () => start(img.naturalWidth, img.naturalHeight);
+img.onerror = () => { $('err').textContent = `바탕 그림 ${DATA.image}을 찾지 못했어요. 칸만 그립니다.`; start(2441, 2658); };
+img.src = DATA.image;
+</script>
+</body>
+</html>
