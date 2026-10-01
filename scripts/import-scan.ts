@@ -531,11 +531,19 @@ interface Region {
   covered: number
 }
 
+/** 2층 위치 찍기에서 사용자가 뺀 추정 덩어리: 찍기 번호와 그 덩어리 안의 한 칸 */
+interface Cut {
+  n: number
+  x: number
+  y: number
+}
+
 /** 사용자 판정 파일 (스캔 폴더의 <맵 id>-판정.json) */
 interface Labels {
   version: 1
   /** 덩어리 안의 한 칸과 그 높이(5cm 단위)로 덩어리를 가리킨다 */
   regions: { x: number; y: number; hq: number; label: '2층' | '아님' | '계단' }[]
+  cuts?: Cut[]
 }
 
 /**
@@ -715,25 +723,39 @@ function readStamps(file: string): Stamp[] {
 }
 
 /**
- * 찍은 곳마다 2층을 정한다.
- * - 스캔에 그 높이 면이 있고 그 덩어리가 충분히 크면: 그 덩어리가 2층
- * - 없거나 작으면 (광선이 못 잡은 실내 2층): 찍은 칸에서 넓혀 가며 '스캔에 없는 2층'을 만든다.
- *   경기 안, 흰 선 밖으로 안 나감, 그 높이 면이 있거나 머리 위(1.8m 이상)가 덮인 칸, 머리 높이에 걸리는 면이 없는 칸까지
+ * 찍은 곳마다 2층을 정한다. 사용자가 서 본 곳이라 경기 구역 마스크와 높은 곳 경계(floorBounds.high)보다 앞선다.
+ * 1. 스캔에 있는 면 (정확): 찍은 높이(±STAMP_TOL)의 면 덩어리가 충분히 크면 그 덩어리, 아니면 스캔에 있는 설 수 있는 면을
+ *    그 높이에서 따라간다 (이웃 칸 높이 차 FLAT_TOL 이하, 흰 선은 안 넘음). 덩어리에 없던 칸(경기 밖, 높은 곳 경계 위)은 새로 넣는다
+ * 2. 넓이 추정: 광선이 못 잡은 바닥이 이어져 있을 수 있어서, 1의 가장자리(1이 없으면 찍은 칸)에서 넓혀 간다.
+ *    경기 안에서만, 흰 선을 안 넘고, 그 높이 면이 있거나 머리 위(STAMP_HEAD 이상)가 덮였고, 머리 높이에 걸리는 면이 없는 칸까지.
+ *    판정 파일의 cuts로 사용자가 뺀 추정 덩어리는 지운다
  */
-function applyStamps(t: ScanTerrain, built: ReturnType<typeof buildRegions>, onLine: Uint8Array, stamps: Stamp[]) {
+function applyStamps(t: ScanTerrain, built: ReturnType<typeof buildRegions>, onLine: Uint8Array, stamps: Stamp[], cuts: Cut[]) {
   const label = new Map<number, '2층'>()
-  const added: { n: number; hq: number; cells: number[] }[] = []
+  /** 찍어서 넣은 면. exact = 스캔에 있는 면, 아니면 넓이 추정. hqs는 칸마다 높이 */
+  const added: { n: number; hq: number; exact: boolean; cells: number[]; hqs: number[] }[] = []
   const results: { n: number; x: number; y: number; hq: number; text: string }[] = []
+  /** 사용자가 빼기 전의 추정 칸 (겹쳐 보기에서 빼기·되돌리기에 쓴다) */
+  const estRaw: { n: number; hq: number; cells: number[] }[] = []
   const tol = Math.round(STAMP_TOL / t.hUnit)
   const head = Math.round(STAMP_HEAD / t.hUnit)
+  const flat = Math.round(FLAT_TOL / t.hUnit)
   const upper = Math.round(t.floorBounds.upper / t.hUnit)
+  const n = t.w * t.d
+  const walkOf = (c: number) => t.walk[Math.floor(c / t.w)][c % t.w]
+  const near4 = (c: number) => [c % t.w > 0 ? c - 1 : -1, c % t.w < t.w - 1 ? c + 1 : -1, c - t.w, c + t.w].filter(d => d >= 0 && d < n)
+  /** 칸 c의 높이 h 면이 덩어리에 들어 있으면 그 덩어리 번호 */
+  const regionAt = (c: number, h: number) => {
+    const i = built.stand[c].findIndex(v => Math.abs(v - h) <= 1)
+    return i < 0 ? -1 : built.nodeRegion[c][i]
+  }
   for (const s of stamps) {
     const x = Math.floor((t.toGame.originX - s.x) / t.cell)
     const y = Math.floor((t.toGame.originZ - s.z) / t.cell)
     const hq = Math.round(s.y / t.hUnit)
     const res = (text: string) => results.push({ n: s.n, x, y, hq, text })
-    if (x < 0 || y < 0 || x >= t.w || y >= t.d || t.play[y][x] !== 'i') {
-      res('경기 구역 밖이라 무시')
+    if (x < 0 || y < 0 || x >= t.w || y >= t.d) {
+      res('스캔 범위 밖이라 무시')
       continue
     }
     if (hq < upper) {
@@ -741,49 +763,101 @@ function applyStamps(t: ScanTerrain, built: ReturnType<typeof buildRegions>, onL
       continue
     }
     const c0 = y * t.w + x
-    const i0 = built.stand[c0].findIndex(h => Math.abs(h - hq) <= tol)
-    const k0 = i0 >= 0 ? built.nodeRegion[c0][i0] : -1
+    const text: string[] = []
+
+    // 1. 스캔에 있는 면
+    const exact = new Map<number, number>()
+    const extra = { n: s.n, hq, exact: true, cells: [] as number[], hqs: [] as number[] }
+    const h0 = walkOf(c0).find(h => Math.abs(h - hq) <= tol)
+    const k0 = h0 === undefined ? -1 : regionAt(c0, h0)
     if (k0 >= 0 && built.regions[k0].cells >= MIN_REGION_CELLS * 4) {
       label.set(k0, '2층')
-      res(`스캔에 있는 면 덩어리 ${built.regions[k0].cells}칸을 2층으로`)
+      for (const c of built.regions[k0].nodes) exact.set(c, built.stand[c][built.nodeRegion[c].indexOf(k0)])
+      text.push(`스캔에 있는 면 덩어리 ${exact.size}칸`)
+    } else if (h0 !== undefined) {
+      exact.set(c0, h0)
+      const queue = [c0]
+      for (let q = 0; q < queue.length && queue.length <= STAMP_MAX_CELLS; q++) {
+        const c = queue[q]
+        for (const d of near4(c)) {
+          if (exact.has(d) || onLine[d]) continue
+          const hd = walkOf(d).find(h => Math.abs(h - exact.get(c)!) <= flat)
+          if (hd === undefined) continue
+          exact.set(d, hd)
+          queue.push(d)
+        }
+      }
+      if (queue.length > STAMP_MAX_CELLS) {
+        res(`면을 따라가니 ${STAMP_MAX_CELLS}칸을 넘어 새어 나간 것으로 보고 버림`)
+        continue
+      }
+      for (const [c, h] of exact) {
+        const k = regionAt(c, h)
+        if (k >= 0) label.set(k, '2층')
+        else {
+          extra.cells.push(c)
+          extra.hqs.push(h)
+        }
+      }
+      if (extra.cells.length) added.push(extra)
+      text.push(`스캔에 있는 면을 따라 ${exact.size}칸${extra.cells.length ? ` (그중 경기 구역 밖·${t.floorBounds.high}m 위라 새로 넣은 칸 ${extra.cells.length})` : ''}`)
+    }
+
+    // 2. 넓이 추정: 경기 안에서 머리 위가 덮였는데 그 높이 면이 안 잡힌 칸
+    const ok = (c: number) => {
+      const top = t.top[Math.floor(c / t.w)][c % t.w]
+      if (t.play[Math.floor(c / t.w)][c % t.w] !== 'i' || onLine[c] || top === null) return false
+      const same = walkOf(c).some(h => Math.abs(h - hq) <= tol)
+      if (!same && top < hq + head) return false
+      return ![...walkOf(c), top].some(h => h > hq + tol && h < hq + head)
+    }
+    // 높은 곳 경계 위(지붕 위 등)는 실내가 아니라 추정하지 않는다
+    const seen = new Set(exact.keys())
+    const queue = hq * t.hUnit >= t.floorBounds.high ? [] : exact.size ? [...exact.keys()] : ok(c0) ? [c0] : []
+    if (!exact.size) seen.add(c0)
+    const est: number[] = []
+    for (let q = 0; q < queue.length && est.length <= STAMP_MAX_CELLS; q++) {
+      for (const d of near4(queue[q])) {
+        if (seen.has(d)) continue
+        seen.add(d)
+        if (!ok(d)) continue
+        queue.push(d)
+        const h = walkOf(d).find(v => Math.abs(v - hq) <= tol)
+        const k = h === undefined ? -1 : regionAt(d, h)
+        if (k >= 0) label.set(k, '2층')
+        else est.push(d)
+      }
+    }
+    if (!exact.size && !queue.length) {
+      res('찍은 칸 위가 덮여 있지 않고 그 높이 면도 없음 (넓이를 못 정함)')
       continue
     }
-    // 스캔에 없는 바닥: 찍은 칸에서 넓혀 간다
-    const ok = (c: number) => {
-      const cx = c % t.w
-      const cy = (c - cx) / t.w
-      const top = t.top[cy][cx]
-      if (t.play[cy][cx] !== 'i' || onLine[c] || top === null) return false
-      const same = built.stand[c].some(h => Math.abs(h - hq) <= tol)
-      if (!same && top < hq + head) return false
-      return ![...t.walk[cy][cx], top].some(h => h > hq + tol && h < hq + head)
-    }
-    const seen = new Set([c0])
-    const queue = ok(c0) || i0 >= 0 ? [c0] : []
-    for (let q = 0; q < queue.length && queue.length <= STAMP_MAX_CELLS; q++) {
-      const c = queue[q]
-      const cx = c % t.w
-      for (const d of [cx > 0 ? c - 1 : -1, cx < t.w - 1 ? c + 1 : -1, c - t.w, c + t.w]) {
-        if (d < 0 || d >= t.w * t.d || seen.has(d)) continue
-        seen.add(d)
-        if (ok(d)) queue.push(d)
+    if (est.length > STAMP_MAX_CELLS) text.push(`추정은 ${STAMP_MAX_CELLS}칸을 넘어 새어 나간 것으로 보고 버림`)
+    else if (est.length) {
+      estRaw.push({ n: s.n, hq, cells: est })
+      // 사용자가 뺀 추정 덩어리(판정 파일 cuts)를 지운다
+      const keep = new Set(est)
+      let cut = 0
+      for (const k of cuts.filter(k => k.n === s.n)) {
+        const start = k.y * t.w + k.x
+        if (!keep.has(start)) continue
+        const stack = [start]
+        keep.delete(start)
+        while (stack.length) {
+          const c = stack.pop()!
+          cut++
+          for (const d of near4(c)) if (keep.has(d)) {
+            keep.delete(d)
+            stack.push(d)
+          }
+        }
       }
+      if (keep.size) added.push({ n: s.n, hq, exact: false, cells: [...keep], hqs: [...keep].map(() => hq) })
+      text.push(`스캔에 없어 넓이를 추정한 칸 ${keep.size}${cut ? ` (사용자가 뺀 ${cut}칸 제외)` : ''}`)
     }
-    if (!queue.length) res('찍은 칸 위가 덮여 있지 않고 그 높이 면도 없음 (넓이를 못 정함)')
-    else if (queue.length > STAMP_MAX_CELLS) res(`넓혀 보니 ${STAMP_MAX_CELLS}칸을 넘어 새어 나간 것으로 보고 버림 (모서리 찍기 필요)`)
-    else {
-      // 넓힌 곳 안에서 스캔에 그 높이 면이 있는 덩어리는 2층으로, 없는 칸은 새 바닥으로
-      const cells: number[] = []
-      for (const c of queue) {
-        const i = built.stand[c].findIndex(h => Math.abs(h - hq) <= tol)
-        if (i >= 0) label.set(built.nodeRegion[c][i], '2층')
-        else cells.push(c)
-      }
-      added.push({ n: s.n, hq, cells })
-      res(`스캔에 없는 2층: ${queue.length}칸으로 넓힘 (그중 새 바닥 ${cells.length}칸, 넓이는 추정)`)
-    }
+    res(text.join(', ') + '을 2층으로')
   }
-  return { label, added, results }
+  return { label, added, results, estRaw }
 }
 
 // ---------- 7. 파일 쓰기 ----------
@@ -903,6 +977,25 @@ const board = toBoard(cells, grid)
 const mask = playMask(board, readPng(path.join(dir, MAP.image)), fit)
 const terrain: ScanTerrain = { ...board, play: mask.rows }
 
+// 찍은 곳(D-070)은 사용자가 서 본 곳이라 경기 구역에 넣는다. 경기 구역이 바뀌면 덩어리를 다시 만들어 한 번 더 적용한다
+const stampsPath = path.join(dir, MAP.stamps)
+const stamps = fs.existsSync(stampsPath) ? readStamps(stampsPath) : []
+const labelsName = `${MAP.id}-판정.json`
+const labelsPath = path.join(dir, labelsName)
+const labelsFile = fs.existsSync(labelsPath) ? (JSON.parse(fs.readFileSync(labelsPath, 'utf8')) as Labels) : null
+const cuts = labelsFile?.cuts ?? []
+let built = buildRegions(terrain, mask.onLine)
+let stamped = applyStamps(terrain, built, mask.onLine, stamps, cuts)
+const opened: number[] = []
+for (const f of stamped.added.filter(f => f.exact)) for (const c of f.cells) if (terrain.play[Math.floor(c / terrain.w)][c % terrain.w] !== 'i') opened.push(c)
+if (opened.length) {
+  const rows = terrain.play.map(r => [...r])
+  for (const c of opened) rows[Math.floor(c / terrain.w)][c % terrain.w] = 'i'
+  terrain.play = rows.map(r => r.join(''))
+  built = buildRegions(terrain, mask.onLine)
+  stamped = applyStamps(terrain, built, mask.onLine, stamps, cuts)
+}
+
 const src = terrainSource(terrain, MAP.csv)
 const outPath = path.join(root, MAP.out)
 fs.mkdirSync(path.dirname(outPath), { recursive: true })
@@ -931,15 +1024,8 @@ for (let y = 0; y < terrain.d; y++)
   }
 const table = heightTable(terrain)
 const review = reviewGroups(terrain)
-// 면 덩어리와 사용자 판정 (판정 파일은 겹쳐 보기에서 저장한다)
-const built = buildRegions(terrain, mask.onLine)
-const labelsName = `${MAP.id}-판정.json`
-const labelsPath = path.join(dir, labelsName)
-const labelsFile = fs.existsSync(labelsPath) ? (JSON.parse(fs.readFileSync(labelsPath, 'utf8')) as Labels) : null
+// 사용자 판정 (판정 파일은 겹쳐 보기에서 저장한다)
 const applied = applyLabels(terrain, built, labelsFile)
-const stampsPath = path.join(dir, MAP.stamps)
-const stamps = fs.existsSync(stampsPath) ? readStamps(stampsPath) : []
-const stamped = applyStamps(terrain, built, mask.onLine, stamps)
 const kinds = (k: RegionKind) => built.regions.filter(r => r.kind === k)
 const cands = kinds('cand')
 const decided = (l: string) => cands.filter(r => applied.label.get(built.regions.indexOf(r)) === l).length
@@ -964,7 +1050,7 @@ const lines = [
   '',
   `면 덩어리 (D-069): 2층 후보 ${cands.length}곳 ${cands.reduce((a, r) => a + r.cells, 0)}칸, 계단 ${kinds('stair').length}곳, 자동으로 2층 아님 ${kinds('small').length + kinds('thin').length}곳 (작음 ${kinds('small').length}, 폭 1m 이하 ${kinds('thin').length})`,
   `판정 파일 ${labelsName}: ${labelsFile ? `판정 ${labelsFile.regions.length}개${applied.lost ? `, 지금 데이터에서 못 찾은 판정 ${applied.lost}개` : ''}. 2층 후보 중 2층 ${decided('2층')}, 아님 ${decided('아님')}, 미정 ${cands.length - decided('2층') - decided('아님')}` : '아직 없음 (겹쳐 보기에서 판정하고 저장하면 생김)'}`,
-  `2층 위치 찍기 ${MAP.stamps}: ${stamps.length ? `${stamps.length}곳. 찍은 덩어리 ${stamped.label.size}곳, 스캔에 없는 2층 ${stamped.added.length}곳 ${stamped.added.reduce((a, f) => a + f.cells.length, 0)}칸. 찍지 않은 2층 후보는 '아님'` : '아직 없음'}`,
+  `2층 위치 찍기 ${MAP.stamps}: ${stamps.length ? `${stamps.length}곳. 찍은 덩어리 ${stamped.label.size}곳, 면을 따라 새로 넣은 곳 ${stamped.added.filter(f => f.exact).length}곳 ${stamped.added.filter(f => f.exact).reduce((a, f) => a + f.cells.length, 0)}칸, 넓이를 추정한 2층 ${stamped.added.filter(f => !f.exact).length}곳 ${stamped.added.filter(f => !f.exact).reduce((a, f) => a + f.cells.length, 0)}칸, 경기 구역에 새로 넣은 칸 ${opened.length}. 찍지 않은 2층 후보는 '아님'` : '아직 없음'}`,
   ...stamped.results.map(r => `  ${r.n}. 높이 ${(r.hq * terrain.hUnit).toFixed(2)}m, 보드 [${r.x}, ${r.y}]: ${r.text}`),
   '',
   `확인 대상 ${review.groups.length}곳 (경기 안인데 밟는 면이 없거나 3개 이상, ${GAP_MAX_CELLS}칸보다 큰 덩어리). 작은 덩어리 ${review.smallGroups}곳 ${review.smallCells}칸은 번호 없이 색만`,
@@ -980,8 +1066,8 @@ const outDir = path.join(dir, '미리보기')
 fs.mkdirSync(outDir, { recursive: true })
 const htmlPath = path.join(outDir, `${MAP.id}-겹쳐보기.html`)
 const data = JSON.stringify({ terrain, image: '../' + MAP.image, fit: { k: fit.k, t: fit.t }, report: lines.join('\n'), review: review.groups,
-  regions: built.regions.map(r => ({ x: r.x, y: r.y, hq: r.hq, mid: r.mid, cells: r.cells, kind: r.kind, covered: r.covered })), nodeRegion: built.nodeRegion, labels: labelsFile?.regions ?? [], labelsName,
-  stamps: stamped.results, stampRegions: [...stamped.label.keys()], added: stamped.added })
+  regions: built.regions.map(r => ({ x: r.x, y: r.y, hq: r.hq, mid: r.mid, cells: r.cells, kind: r.kind, covered: r.covered })), nodeRegion: built.nodeRegion, labels: labelsFile?.regions ?? [], cuts, labelsName,
+  stamps: stamped.results, stampRegions: [...stamped.label.keys()], added: stamped.added.filter(f => f.exact), estRaw: stamped.estRaw })
 const template = fs.readFileSync(path.join(root, 'scripts/scan-preview.html'), 'utf8')
 fs.writeFileSync(htmlPath, template.replace('const DATA = __DATA__', () => 'const DATA = ' + data))
 lines.push(`겹쳐 보기: ${htmlPath}`)

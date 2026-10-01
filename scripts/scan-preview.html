@@ -67,7 +67,7 @@
   <p class="note">지도에서 칸을 누르면 그 자리의 면 덩어리가 위에서부터 나온다. 방 안 2층과 그 위 지붕처럼 겹친 곳은 따로따로 고른다. '아님'으로 고르면 그 아래 면이 보인다</p>
   <div id="picks"><p class="note">칸을 눌러 보세요</p></div>
   <p id="progress"></p>
-  <div class="row"><button id="save">판정 저장</button> <span id="saved"></span></div>
+  <div class="row"><button id="save">판정 저장</button> <button id="uncut">뺀 추정 모두 되돌리기</button> <span id="saved"></span></div>
   <p class="note">저장한 파일은 스캔 폴더에 <b class="lname"></b> 이름으로 두고 변환을 다시 돌리면 반영된다. 판정은 이 브라우저에도 자동으로 기억된다</p>
   <h2>2층 위치 찍기 결과 (누르면 그 자리로)</h2>
   <ol id="stamps"></ol>
@@ -124,16 +124,39 @@ function findRegion(l) {
   return i < 0 ? -1 : NR[c][i];
 }
 function loadLabels() {
-  let list = DATA.labels;
-  try { const s = localStorage.getItem(STORE); if (s) list = JSON.parse(s); } catch (e) { /* 저장소를 못 쓰면 파일 판정만 */ }
-  for (const l of list) { const k = findRegion(l); if (k >= 0) labels.set(k, l.label); }
+  let saved = { regions: DATA.labels, cuts: DATA.cuts };
+  try {
+    const s = localStorage.getItem(STORE);
+    if (s) { const v = JSON.parse(s); saved = Array.isArray(v) ? { regions: v, cuts: DATA.cuts } : v; }
+  } catch (e) { /* 저장소를 못 쓰면 파일 판정만 */ }
+  for (const l of saved.regions) { const k = findRegion(l); if (k >= 0) labels.set(k, l.label); }
+  cuts = saved.cuts || [];
+  buildAdded();
 }
 const labelList = () => [...labels].map(([k, label]) => ({ x: REG[k].x, y: REG[k].y, hq: REG[k].hq, label }));
-function remember() { try { localStorage.setItem(STORE, JSON.stringify(labelList())); } catch (e) { /* 무시 */ } }
+function remember() { try { localStorage.setItem(STORE, JSON.stringify({ regions: labelList(), cuts })); } catch (e) { /* 무시 */ } }
 // 2층 위치 찍기 (D-070): 찍은 덩어리는 2층, 찍었는데 스캔에 없는 바닥은 넓이를 추정해 새로 만든 2층
 const STAMPED = new Set(DATA.stampRegions);
 const ADDED = new Map();
-DATA.added.forEach(f => f.cells.forEach(c => ADDED.set(c, f)));
+/** 사용자가 뺀 추정 덩어리: 찍기 번호와 그 덩어리 안의 한 칸 */
+let cuts = [];
+function buildAdded() {
+  ADDED.clear();
+  DATA.added.forEach(f => f.cells.forEach((c, i) => ADDED.set(c, { n: f.n, hq: f.hqs[i], exact: true })));
+  for (const f of DATA.estRaw) {
+    const keep = new Set(f.cells);
+    for (const k of cuts.filter(k => k.n === f.n)) {
+      const stack = [k.y * T.w + k.x];
+      if (!keep.delete(stack[0])) continue;
+      while (stack.length) {
+        const c = stack.pop(), x = c % T.w;
+        for (const d of [x > 0 ? c - 1 : -1, x < T.w - 1 ? c + 1 : -1, c - T.w, c + T.w]) if (keep.delete(d)) stack.push(d);
+      }
+    }
+    keep.forEach(c => { if (!ADDED.has(c)) ADDED.set(c, { n: f.n, hq: f.hq, exact: false }); });
+  }
+}
+const addedColor = e => (e.exact ? COLORS.U : COLORS.est);
 /** 덩어리의 지금 판정: 사용자가 고른 것 > 찍은 곳 > 종류에 따른 기본값. 찍기를 했으면 찍지 않은 2층 후보는 아님 */
 function stateOf(k) {
   if (labels.has(k)) return labels.get(k);
@@ -149,14 +172,14 @@ function cellColor(x, y) {
   const s = stand(x, y);
   if (odd(x, y) && $('which').value !== 'judge') return COLORS.R;
   if ($('which').value === 'judge') {
-    if (!s.length) return ADDED.has(y * T.w + x) ? COLORS.est : COLORS.R;
+    if (!s.length) return ADDED.has(y * T.w + x) ? addedColor(ADDED.get(y * T.w + x)) : COLORS.R;
     const c0 = y * T.w + x, ks = NR[c0], est = ADDED.get(c0);
     for (const [i, k] of ks.entries()) {
       const c = STATE_COLOR[stateOf(k)];
-      if (est && est.hq > s[i]) return COLORS.est;
+      if (est && est.hq > s[i]) return addedColor(est);
       if (c) return c;
     }
-    return est ? COLORS.est : null;
+    return est ? addedColor(est) : null;
   }
   return COLORS[floorOf($('which').value === 'lo' ? s[s.length - 1] : s[0])];
 }
@@ -278,7 +301,8 @@ cv.addEventListener('mousemove', ev => {
   $('info').textContent = [
     `보드 칸 [${x}, ${y}]   게임 X ${gameX(x + 0.5).toFixed(2)}, Z ${gameZ(y + 0.5).toFixed(2)}`,
     PLAY[T.play[y][x]],
-    T.play[y][x] === 'i' ? `밟는 면: ${s.length ? s.map((v, i) => `${m(v)} (${stateOf(NR[y * T.w + x][i])})`).join(', ') : '없음'}` : '',
+    T.play[y][x] === 'i' ? `밟는 면: ${s.length ? s.map((v, i) => `${m(v)} (${NR[y * T.w + x][i] === undefined ? '덩어리 없음' : stateOf(NR[y * T.w + x][i])})`).join(', ') : '없음'}` : '',
+    ADDED.has(y * T.w + x) ? `찍기 ${ADDED.get(y * T.w + x).n}번: ${m(ADDED.get(y * T.w + x).hq)} ${ADDED.get(y * T.w + x).exact ? '(스캔 면)' : '(넓이 추정)'}` : '',
     `설 수 있는 면 전체: ${w.length ? w.map(m).join(', ') : '없음'}`,
     top === null ? '맨 위 면: 없음' : `맨 위 면: ${m(top)} (법선 y ${(T.topN[y][x] / 99).toFixed(2)})`,
     f === 'f' || f === 'F' ? '채움 (이웃 값으로 채운 칸)' : '',
@@ -302,7 +326,20 @@ function showPicks() {
   if (!pickCell) return;
   const { x, y } = pickCell, ks = NR[y * T.w + x], s = stand(x, y);
   const est = ADDED.get(y * T.w + x);
-  if (est) box.insertAdjacentHTML('beforeend', `<div class="pick"><b>${m(est.hq)}</b> · 스캔에 없는 2층 (찍기 ${est.n}번, 넓이 추정)<br><span class="note">고치려면 게임에서 다시 찍거나 겹쳐 보기 판정으로 아래 면을 고른다</span></div>`);
+  if (est && est.exact) box.insertAdjacentHTML('beforeend', `<div class="pick"><b>${m(est.hq)}</b> · 찍어서 넣은 면 (찍기 ${est.n}번, 스캔에 있는 면을 따라감)</div>`);
+  if (est && !est.exact) {
+    const div = document.createElement('div');
+    div.className = 'pick';
+    div.innerHTML = `<b>${m(est.hq)}</b> · 스캔에 없어 넓이를 추정한 2층 (찍기 ${est.n}번)<br><span class="note">2층이 아닌데 칠해졌으면 빼기: 이 칸과 이어진 추정 칸이 함께 빠진다</span>`;
+    const row = document.createElement('div');
+    row.className = 'row';
+    const b = document.createElement('button');
+    b.textContent = '이 추정 덩어리 빼기';
+    b.onclick = () => { cuts.push({ n: est.n, x, y }); buildAdded(); remember(); showPicks(); progress(); draw(); };
+    row.appendChild(b);
+    div.appendChild(row);
+    box.appendChild(div);
+  }
   if (!ks.length) { if (!est) box.innerHTML = '<p class="note">이 칸에는 밟는 면이 없다 (스캔이 바닥에 못 닿은 곳일 수 있음)</p>'; return; }
   ks.forEach((k, i) => {
     const r = REG[k], st = stateOf(k), div = document.createElement('div');
@@ -328,7 +365,9 @@ function progress() {
   const cands = REG.map((r, k) => k).filter(k => REG[k].kind === 'cand');
   const n = v => cands.filter(k => stateOf(k) === v).length;
   $('progress').textContent = `2층 후보 ${cands.length}곳: 2층 ${n('2층')}, 아님 ${n('아님')}, 계단 ${n('계단')}, 미정 ${cands.length - n('2층') - n('아님') - n('계단')}` +
-    (labels.size ? ` · 그 밖에 바꾼 덩어리 ${[...labels.keys()].filter(k => REG[k].kind !== 'cand').length}곳` : '');
+    (labels.size ? ` · 그 밖에 바꾼 덩어리 ${[...labels.keys()].filter(k => REG[k].kind !== 'cand').length}곳` : '') +
+    (cuts.length ? ` · 뺀 추정 덩어리 ${cuts.length}곳` : '');
+  $('uncut').style.display = cuts.length ? '' : 'none';
   const ol = $('cands');
   ol.innerHTML = '';
   cands.sort((a, b) => REG[b].cells - REG[a].cells).forEach(k => {
@@ -340,7 +379,7 @@ function progress() {
 }
 
 async function save() {
-  const text = JSON.stringify({ version: 1, regions: labelList() }, null, 1);
+  const text = JSON.stringify({ version: 1, regions: labelList(), cuts }, null, 1);
   if (window.showSaveFilePicker) {
     try {
       const fh = await window.showSaveFilePicker({ suggestedName: DATA.labelsName, types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }] });
@@ -414,6 +453,7 @@ document.querySelectorAll('.high').forEach(e => { e.textContent = T.floorBounds.
 document.querySelectorAll('.lname').forEach(e => { e.textContent = DATA.labelsName; });
 loadLabels(); legend(); review(); progress(); stampList();
 $('save').onclick = save;
+$('uncut').onclick = () => { cuts = []; buildAdded(); remember(); showPicks(); progress(); draw(); };
 for (const id of ['showFloor', 'showTwo', 'showAuto', 'showNo', 'showFill', 'showReview', 'showOut']) $(id).addEventListener('change', draw);
 $('which').addEventListener('change', () => { legend(); draw(); });
 for (const id of ['alpha', 'zoom']) $(id).addEventListener('input', layout);
