@@ -17,6 +17,8 @@
 | `docs/` | 기획 문서: 비전·로드맵, 역할·도구, 디자인 규칙, 문제 설계, 결정 로그, 용어 사전 |
 | `reference/` | P1 시각 시안 (기준 시안 5차). 배포되지 않는다 |
 | `src/` | 게임 코드 (Vite + TypeScript + React, 보드는 SVG) |
+| `scripts/` | 개발용 스크립트. `import-scan.ts`는 워크숍 스캔 CSV를 지형 데이터로 바꾼다 (`npm run import-scan -- "<스캔 폴더>"`) |
+| `tools/` | 게임 밖에서 쓰는 도구. `tools/workshop/`은 오버워치 워크숍 맵 스캐너 코드와 사용법 |
 | `CLAUDE.md` | 이 저장소에서 일하는 Claude Code를 위한 안내 |
 
 ## 개발
@@ -32,3 +34,5 @@ npm run build    # 배포용 빌드 (결과물은 dist/)
 
 ## 알림
 팬이 만든 비공식 학습 도구이며 Blizzard Entertainment와 관련이 없다. Overwatch는 Blizzard Entertainment, Inc.의 상표다. 시안과 게임 화면의 그림은 대체 그림을 쓴다.
+
+맵 검수에 StatBanana(https://statbanana.com/)의 오버헤드 지도를 참고했다.
