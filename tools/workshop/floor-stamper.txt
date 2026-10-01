@@ -1,0 +1,159 @@
+variables
+{
+	global:
+		0: Row
+
+	player:
+		0: A
+		1: B
+		2: Corners
+		3: Scanning
+		4: Step
+		5: X0
+		6: Z0
+		7: NX
+		8: NZ
+		9: YTop
+		10: YBot
+		11: I
+		12: J
+		13: K
+		14: Px
+		15: Pz
+		16: YFrom
+		17: HitPos
+		18: Temp
+		19: Layers
+		20: Done
+		21: Code
+}
+
+rule("Stamper: setup")
+{
+	event
+	{
+		Ongoing - Global;
+	}
+
+	actions
+	{
+		Disable Built-In Game Mode Completion;
+		Disable Inspector Recording;
+	}
+}
+
+rule("Stamper: pause match time")
+{
+	event
+	{
+		Ongoing - Global;
+	}
+
+	conditions
+	{
+		Is Game In Progress == True;
+	}
+
+	actions
+	{
+		Pause Match Time;
+	}
+}
+
+rule("Stamper: player HUD")
+{
+	event
+	{
+		Ongoing - Each Player;
+		All;
+		All;
+	}
+
+	actions
+	{
+		Event Player.A = 0;
+		Event Player.B = Empty Array;
+		Create HUD Text(Event Player, Custom String("OW-TACTICS FLOOR STAMPER"), Custom String("F: stamp here (one per floor area)   Crouch + F: undo last"), Null, Left, 0, Color(Yellow), Color(White), Color(White), Visible To and String, Default Visibility);
+		Create HUD Text(Event Player, Null, Null, Custom String("Pos {0}", Position Of(Event Player)), Left, 1, Color(White), Color(White), Color(White), Visible To and String, Default Visibility);
+		Create HUD Text(Event Player, Null, Null, Custom String("Stamps {0}   On ground {1}", Event Player.A, Is On Ground(Event Player)), Left, 2, Color(White), Color(White), Color(White), Visible To and String, Default Visibility);
+	}
+}
+
+rule("Stamper: stamp")
+{
+	event
+	{
+		Ongoing - Each Player;
+		All;
+		All;
+	}
+
+	conditions
+	{
+		Is Button Held(Event Player, Button(Interact)) == True;
+		Is Button Held(Event Player, Button(Crouch)) == False;
+		Is On Ground(Event Player) == True;
+	}
+
+	actions
+	{
+		Modify Player Variable(Event Player, A, Add, 1);
+		Event Player.Temp = Array(Event Player.A, X Component Of(Position Of(Event Player)), Y Component Of(Position Of(Event Player)), Z Component Of(Position Of(Event Player)));
+		Enable Inspector Recording;
+		Global.Row = Event Player.Temp;
+		Disable Inspector Recording;
+		Create Effect(All Players(All Teams), Ring, Color(Lime Green), Position Of(Event Player), 1, Visible To);
+		Modify Player Variable(Event Player, B, Append To Array, Last Created Entity);
+		Small Message(Event Player, Custom String("Stamp {0}: {1}", Event Player.A, Position Of(Event Player)));
+	}
+}
+
+rule("Stamper: undo last")
+{
+	event
+	{
+		Ongoing - Each Player;
+		All;
+		All;
+	}
+
+	conditions
+	{
+		Is Button Held(Event Player, Button(Interact)) == True;
+		Is Button Held(Event Player, Button(Crouch)) == True;
+		Event Player.A > 0;
+	}
+
+	actions
+	{
+		Event Player.Temp = Array(-3, Event Player.A);
+		Enable Inspector Recording;
+		Global.Row = Event Player.Temp;
+		Disable Inspector Recording;
+		Destroy Effect(Last Of(Event Player.B));
+		Modify Player Variable(Event Player, B, Remove From Array By Index, Count Of(Event Player.B) - 1);
+		Small Message(Event Player, Custom String("Undo stamp {0}", Event Player.A));
+		Modify Player Variable(Event Player, A, Subtract, 1);
+	}
+}
+
+rule("Stamper: not on ground")
+{
+	event
+	{
+		Ongoing - Each Player;
+		All;
+		All;
+	}
+
+	conditions
+	{
+		Is Button Held(Event Player, Button(Interact)) == True;
+		Is On Ground(Event Player) == False;
+	}
+
+	actions
+	{
+		Small Message(Event Player, Custom String("Stand on the floor first"));
+	}
+}
