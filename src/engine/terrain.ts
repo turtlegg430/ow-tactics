@@ -85,6 +85,17 @@ export function buildTerrain(map: MapData): Terrain {
       }
     }
   }
+  // 실측 맵의 벽(D-072): 1층 바닥 위에 서 있어서 밑면은 1층 높이. 맵 가장자리(빈 칸 옆)에서만 바닥판 밑까지
+  if (map.scale) {
+    for (let gy = 0; gy < d; gy++) {
+      for (let gx = 0; gx < w; gx++) {
+        const t = tiles[gy][gx]
+        if (t.type !== 'struct') continue
+        const edge = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => at(terrain, gx + dx, gy + dy)?.type === 'void')
+        t.bot = edge ? map.slab : map.heights.G
+      }
+    }
+  }
   return terrain
 }
 

@@ -66,42 +66,64 @@ export const Terrain = memo(function Terrain({ terrain, view }: Props) {
   )
 })
 
-/** 빈 칸 말고 모두 같은 높이의 1층 바닥이면 그 높이 (실측 맵의 1층 단계, D-073). 아니면 null */
+/**
+ * 실측 맵 (D-072, D-073): 빈 칸 말고 모두 같은 높이의 1층 바닥이거나 그 위에 선 벽이면 1층 높이. 아니면 null.
+ * 이런 맵은 1층이 가장 낮아서 1층을 먼저 한 덩어리로 칠하고 벽을 그 위에 세워도 앞뒤가 맞는다
+ */
 function flatFloorHeight(t: TerrainData): number | null {
   let h: number | null = null
   for (const row of t.tiles) {
     for (const tile of row) {
-      if (tile.type === 'void') continue
-      if (tile.type !== 'floor' || tile.floor !== 'G' || tile.hA !== tile.hB || tile.hA !== tile.hC || tile.hA !== tile.hD) return null
+      if (tile.type !== 'floor') continue
+      if (tile.floor !== 'G' || tile.hA !== tile.hB || tile.hA !== tile.hC || tile.hA !== tile.hD) return null
       if (h === null) h = tile.hA
       else if (h !== tile.hA) return null
+    }
+  }
+  if (h === null) return null
+  for (const row of t.tiles) {
+    for (const tile of row) {
+      if (tile.type === 'void' || tile.type === 'floor') continue
+      if (tile.type !== 'struct' || Math.min(tile.hA, tile.hB, tile.hC, tile.hD) < h) return null
     }
   }
   return h
 }
 
-// 평평한 1층: 옆면을 먼 칸부터 그린 뒤 윗면을 한 덩어리로 칠한다. 칸마다 칠하면 칸 사이 이음매가 잔무늬로 보여서
+// 평평한 1층과 벽: 1층 옆면을 먼 칸부터 그린 뒤 1층 윗면을 한 덩어리로 칠하고(칸마다 칠하면 이음매가 잔무늬로 보여서),
+// 그 위에 벽을 먼 칸부터 세운다
 function FlatFloor({ terrain, view, h }: Props & { h: number }) {
-  const order: [number, number, number][] = []
+  const floors: [number, number, number][] = []
+  const walls: [number, number, number][] = []
   let top = ''
   for (let gy = 0; gy < terrain.d; gy++) {
     for (let gx = 0; gx < terrain.w; gx++) {
-      if (terrain.tiles[gy][gx].type === 'void') continue
-      order.push([gx, gy, depth(view, gx + 0.5, gy + 0.5)])
+      const type = terrain.tiles[gy][gx].type
+      if (type === 'void') continue
+      const dp: [number, number, number] = [gx, gy, depth(view, gx + 0.5, gy + 0.5)]
+      if (type === 'struct') {
+        walls.push(dp)
+        continue
+      }
+      floors.push(dp)
       const q = [iso(view, gx, gy, h), iso(view, gx + 1, gy, h), iso(view, gx + 1, gy + 1, h), iso(view, gx, gy + 1, h)]
       top += 'M' + q.map(p => f1(p[0]) + ' ' + f1(p[1])).join('L') + 'Z'
     }
   }
-  order.sort((a, b) => a[2] - b[2])
+  floors.sort((a, b) => a[2] - b[2])
+  walls.sort((a, b) => a[2] - b[2])
   const edges: ReactElement[] = []
-  for (const [gx, gy] of order) lips(terrain, view, gx, gy, terrain.tiles[gy][gx], edges)
+  for (const [gx, gy] of floors) lips(terrain, view, gx, gy, terrain.tiles[gy][gx], edges)
   return (
     <g data-layer="terrain">
-      {order.map(([gx, gy]) => (
+      {floors.map(([gx, gy]) => (
         <Tile key={gx + ',' + gy} terrain={terrain} view={view} gx={gx} gy={gy} sidesOnly />
       ))}
       <path d={top} fill={FLOOR_COLORS.G} />
       {edges}
+      {walls.map(([gx, gy]) => (
+        <Tile key={'w' + gx + ',' + gy} terrain={terrain} view={view} gx={gx} gy={gy} />
+      ))}
     </g>
   )
 }
